@@ -426,7 +426,10 @@ Start with this EXACT branded header HTML:
         + signature_html
     )
 
-    return html_body, round(pvp_total, 2), round(margin_pct, 2)
+    # 6. Envolver em HTML completo com CSS (necessário para preview e email)
+    full_html = _wrap_html(html_body)
+
+    return full_html, round(pvp_total, 2), round(margin_pct, 2)
 
 
 # ── Geração de Follow-up ──────────────────────────────────────────────────────
@@ -474,7 +477,7 @@ Return ONLY the HTML email body (no html/head/body tags).
         max_tokens=800,
         messages=[{"role": "user", "content": prompt}]
     )
-    return response.content[0].text
+    return _wrap_html(response.content[0].text)
 
 
 # ── Guardar email em ficheiro HTML ────────────────────────────────────────────
@@ -496,7 +499,8 @@ def save_email_html(deal_id: str, html_body: str, email_type: str = "proposal") 
     filepath = EMAILS_OUT_DIR / filename
 
     with open(str(filepath), "w", encoding="utf-8") as f:
-        f.write(_wrap_html(html_body))
+        # html_body já vem com _wrap_html aplicado desde generate_proposal
+        f.write(html_body)
 
     print(f"  Email guardado: {filepath}")
 
