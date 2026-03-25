@@ -357,76 +357,77 @@ Start with this EXACT branded header HTML:
         if body_match:
             html_body = body_match.group(1).strip()
 
-    # 3. Remover font-family dos inline styles do Claude (o CSS wrapper já define o font)
-    html_body = _re.sub(
-        r'font-family\s*:[^;"\'}]+[;]?',
-        '',
-        html_body, flags=_re.IGNORECASE
-    )
-    # Remover font face tags antigas
+    # 3. Remover font-family inline do Claude (CSS wrapper define a fonte)
+    html_body = _re.sub(r'font-family\s*:[^;"\'}]+[;]?', '', html_body, flags=_re.IGNORECASE)
     html_body = _re.sub(r'<font\s[^>]*>', '', html_body, flags=_re.IGNORECASE)
     html_body = _re.sub(r'</font>', '', html_body, flags=_re.IGNORECASE)
 
-    # 4. Remover qualquer bloco de Commercial Conditions gerado pelo Claude
-    #    (gerado em Python mais abaixo para garantir consistência)
+    # 4. Remover qualquer texto de "Kind regards" / saudação gerado pelo Claude
     html_body = _re.sub(
-        r'<div[^>]*class=["\']conditions["\'][^>]*>.*?</div>',
-        '', html_body, flags=_re.DOTALL | _re.IGNORECASE
-    )
-    # Também remover se Claude gerou h3 Commercial Conditions + tabela avulsa
-    html_body = _re.sub(
-        r'<h3[^>]*>\s*commercial conditions\s*</h3>.*?(?=<p|<div|<h[1-6]|$)',
-        '', html_body, flags=_re.DOTALL | _re.IGNORECASE
+        r'<p[^>]*>\s*(kind regards|best regards|com os melhores cumprimentos'
+        r'|cordialement|atentamente)[^<]*</p>',
+        '', html_body, flags=_re.IGNORECASE
     )
 
-    # 4b. Bloco Commercial Conditions gerado em Python (100% consistente)
-    conditions_html = f"""
-<div class="conditions">
-  <h3>Commercial Conditions</h3>
-  <table><tbody>
-    <tr><td class="lbl">Incoterm</td><td>{effective_incoterm}</td></tr>
-    <tr><td class="lbl">Payment Conditions</td><td>{effective_payment}</td></tr>
-    <tr><td class="lbl">Availability / ETA</td><td>{availability or "Ex-stock"}</td></tr>
-  </tbody></table>
-</div>"""
+    # 5. Fechar quaisquer <div> que o Claude deixou em aberto
+    #    (divs em aberto fazem os blocos seguintes ficarem dentro deles)
+    open_divs = len(_re.findall(r'<div\b[^>]*>', html_body)) - html_body.count('</div>')
+    if open_divs > 0:
+        html_body = html_body.rstrip() + ('</div>' * open_divs)
 
-    # 5. Acrescentar assinatura programaticamente no lugar certo
+    # 6. Blocos Python gerados com inline styles (imunes a herança de CSS pai)
+    closing_lang = {
+        "EN": "Kind regards,", "PT": "Com os melhores cumprimentos,",
+        "ES": "Atentamente,", "FR": "Cordialement,",
+    }
+    closing = closing_lang.get(language.upper(), "Kind regards,")
+
+    conditions_html = (
+        '\n<div style="background:#f5f5f5;border:1px solid #e0e0e0;'
+        'border-left:4px solid #CC0000;border-radius:0 4px 4px 0;'
+        'padding:14px 16px;margin:24px 0 0 0;font-size:13px;">'
+        '\n  <h3 style="color:#CC0000;font-size:13px;text-transform:uppercase;'
+        'letter-spacing:.5px;margin:0 0 10px;font-weight:700;">Commercial Conditions</h3>'
+        '\n  <table style="width:100%;border-collapse:collapse;margin:0;"><tbody>'
+        f'\n    <tr style="background:transparent;">'
+        f'<td style="padding:6px 8px;font-weight:600;width:200px;color:#333;border:none;vertical-align:top;">Incoterm</td>'
+        f'<td style="padding:6px 8px;border:none;color:#333;">{effective_incoterm}</td></tr>'
+        f'\n    <tr style="background:#e8e8e8;">'
+        f'<td style="padding:6px 8px;font-weight:600;width:200px;color:#333;border:none;vertical-align:top;">Payment Conditions</td>'
+        f'<td style="padding:6px 8px;border:none;color:#333;">{effective_payment}</td></tr>'
+        f'\n    <tr style="background:transparent;">'
+        f'<td style="padding:6px 8px;font-weight:600;width:200px;color:#333;border:none;vertical-align:top;">Availability / ETA</td>'
+        f'<td style="padding:6px 8px;border:none;color:#333;">{availability or "Ex-stock"}</td></tr>'
+        '\n  </tbody></table>'
+        '\n</div>'
+    )
+
     logo_src = _logo_b64()
     logo_tag = (
         f'<img src="{logo_src}" alt="Worten" '
         f'style="max-height:55px;display:block;margin-bottom:10px;">'
         if logo_src else ""
     )
-    signature_html = f"""
-<div class="signature" style="font-family:Aptos,Calibri,'Segoe UI',Arial,sans-serif;margin-top:32px;margin-left:0;padding-left:0;padding-top:20px;border-top:1px solid #e0e0e0;font-size:13px;color:#444;line-height:1.8;">
-  {logo_tag}
-  <b style="color:#222;font-size:14px;font-family:Aptos,Calibri,'Segoe UI',Arial,sans-serif;">{USER_NAME}</b><br>
-  <span style="color:#555;font-family:Aptos,Calibri,'Segoe UI',Arial,sans-serif;">{COMPANY_NAME}</span><br>
-  <span style="white-space:nowrap;font-family:Aptos,Calibri,'Segoe UI',Arial,sans-serif;">
-    <a href="mailto:{USER_EMAIL}" style="color:#CC0000;text-decoration:none;font-family:Aptos,Calibri,'Segoe UI',Arial,sans-serif;">{USER_EMAIL}</a>
-    &nbsp;·&nbsp; {USER_PHONE}
-  </span>
-</div>"""
-    # Garantir que a assinatura fica SEMPRE no final, fora de qualquer div
-    # Remover qualquer "Kind regards" gerado pelo Claude para evitar duplicado
-    html_body = _re.sub(
-        r'<p[^>]*>\s*(kind regards|best regards|com os melhores cumprimentos'
-        r'|cordialement|atentamente)[^<]*</p>',
-        '', html_body, flags=_re.IGNORECASE
+    signature_html = (
+        '\n<div style="background:#ffffff;margin-top:28px;padding-top:20px;'
+        'border-top:1px solid #e0e0e0;font-size:13px;color:#444;line-height:1.8;">'
+        f'\n  {logo_tag}'
+        f'\n  <b style="color:#222;font-size:14px;">{USER_NAME}</b><br>'
+        f'\n  <span style="color:#555;">{COMPANY_NAME}</span><br>'
+        f'\n  <span style="white-space:nowrap;">'
+        f'<a href="mailto:{USER_EMAIL}" style="color:#CC0000;text-decoration:none;">{USER_EMAIL}</a>'
+        f'&nbsp;·&nbsp;{USER_PHONE}</span>'
+        '\n</div>'
     )
-    closing_lang = {
-        "EN": "Kind regards,", "PT": "Com os melhores cumprimentos,",
-        "ES": "Atentamente,", "FR": "Cordialement,",
-    }
-    closing = closing_lang.get(language.upper(), "Kind regards,")
+
     html_body = (
         html_body.rstrip()
         + conditions_html
-        + f'\n<p style="margin-top:24px;margin-left:0;padding-left:0;font-size:14px;color:#333;">{closing}</p>'
+        + f'\n<p style="margin-top:24px;font-size:14px;color:#333;">{closing}</p>'
         + signature_html
     )
 
-    # 6. Envolver em HTML completo com CSS (necessário para preview e email)
+    # 7. Envolver em HTML completo com CSS
     full_html = _wrap_html(html_body)
 
     return full_html, round(pvp_total, 2), round(margin_pct, 2)
