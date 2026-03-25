@@ -547,18 +547,23 @@ elif page == "📋  Deals em Curso":
                 st.markdown("---")
                 st.markdown("**🔒 Fechar Deal**")
                 fd1, fd2 = st.columns(2)
-                dep_date = fd1.text_input("Data prevista de saída", placeholder="ex: 15/04/2026",
-                                          key=f"dep_{did}")
-                stocks_to = fd2.text_input("Email Stocks",
+                dep_date    = fd1.text_input("Data prevista de saída (cliente)",
+                                             placeholder="ex: 15/04/2026",
+                                             key=f"dep_{did}")
+                supplier_date = fd2.text_input("Data acordada c/ fornecedor (entrega Worten)",
+                                               placeholder="ex: 10/04/2026",
+                                               key=f"supdate_{did}")
+                fd3, fd4, fd5 = st.columns(3)
+                stocks_to = fd3.text_input("Email Stocks",
                                            value=STOCKS_EMAIL,
                                            key=f"sto_{did}",
                                            help="Separa vários emails com ;")
-                fd3, fd4 = st.columns(2)
-                admin_to = fd3.text_input("Email Administrativo",
+                admin_to = fd4.text_input("Email Administrativo",
                                           value=ADMIN_EMAIL,
                                           key=f"adm_{did}",
                                           help="Separa vários emails com ;")
-                if fd4.button("✅ Fechar & Enviar Alertas Internos",
+                fd5.markdown("<br>", unsafe_allow_html=True)
+                if fd5.button("✅ Fechar & Enviar Alertas Internos",
                               key=f"close_{did}", type="primary",
                               use_container_width=True):
                     if not dep_date:
@@ -568,7 +573,8 @@ elif page == "📋  Deals em Curso":
                     else:
                         with st.spinner("A gerar e enviar alertas internos..."):
                             try:
-                                stocks_html, admin_html = generate_closing_emails(deal, dep_date)
+                                stocks_html, admin_html = generate_closing_emails(
+                                    deal, dep_date, supplier_date)
                                 errs = []
                                 subj = f"[DEAL FECHADO] {did} — {cl}"
                                 if stocks_to:

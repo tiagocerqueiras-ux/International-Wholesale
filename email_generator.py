@@ -87,7 +87,7 @@ def _wrap_html(body: str) -> str:
 <head>
   <meta charset="utf-8">
   <style>
-    * {{ font-family: Calibri, 'Segoe UI', Arial, sans-serif !important; box-sizing: border-box; }}
+    * {{ font-family: Aptos, Calibri, 'Segoe UI', Arial, sans-serif !important; box-sizing: border-box; }}
     body {{
       font-size: 14px;
       max-width: 780px;
@@ -178,11 +178,11 @@ def _wrap_html(body: str) -> str:
       padding-left: 20px;
       border-top: 1px solid #e0e0e0;
       font-size: 13px;
-      font-family: Calibri, 'Segoe UI', Arial, sans-serif;
+      font-family: Aptos, Calibri, 'Segoe UI', Arial, sans-serif;
       color: #444;
       line-height: 1.8;
     }}
-    .signature b {{ color: #222; font-size: 14px; font-family: Calibri, 'Segoe UI', Arial, sans-serif; }}
+    .signature b {{ color: #222; font-size: 14px; font-family: Aptos, Calibri, 'Segoe UI', Arial, sans-serif; }}
     .signature img {{ display: block; margin-bottom: 12px; max-height: 60px; }}
     .footnote {{ font-size: 11px; color: #888; margin-top: 6px; }}
   </style>
@@ -326,7 +326,7 @@ INSTRUCTIONS:
 
 CRITICAL FORMATTING RULES — DO NOT DEVIATE UNDER ANY CIRCUMSTANCES:
 - Return ONLY raw HTML — NO markdown fences (no ```html, no ```, no backticks)
-- font-family: Calibri, 'Segoe UI', Arial, sans-serif — NO other fonts ever
+- font-family: Aptos, Calibri, 'Segoe UI', Arial, sans-serif — NO other fonts ever
 - All table columns centered except Product column (left-aligned)
 - Use ONLY these CSS classes: note-box, summary-table, conditions, footnote, total-row
 - NEVER add inline style attributes that set colour, font-family, or background-color
@@ -337,9 +337,9 @@ CRITICAL FORMATTING RULES — DO NOT DEVIATE UNDER ANY CIRCUMSTANCES:
 
 Start with this EXACT branded header HTML:
 <div style="background:#CC0000;padding:20px 28px;border-radius:6px 6px 0 0;margin-bottom:24px;position:relative;">
-  <span style="color:white;font-size:26px;font-weight:900;letter-spacing:-1px;font-family:Calibri,'Segoe UI',Arial,sans-serif;">worten</span>
-  <span style="color:#ffaaaa;font-size:13px;margin-left:16px;font-family:Calibri,'Segoe UI',Arial,sans-serif;">International Wholesale</span>
-  <span style="color:#ffcccc;font-size:12px;float:right;margin-top:8px;font-family:Calibri,'Segoe UI',Arial,sans-serif;">Ref: {deal_id}</span>
+  <span style="color:white;font-size:26px;font-weight:900;letter-spacing:-1px;font-family:Aptos,Calibri,'Segoe UI',Arial,sans-serif;">worten</span>
+  <span style="color:#ffaaaa;font-size:13px;margin-left:16px;font-family:Aptos,Calibri,'Segoe UI',Arial,sans-serif;">International Wholesale</span>
+  <span style="color:#ffcccc;font-size:12px;float:right;margin-top:8px;font-family:Aptos,Calibri,'Segoe UI',Arial,sans-serif;">Ref: {deal_id}</span>
 </div>
 """
 
@@ -384,12 +384,12 @@ Start with this EXACT branded header HTML:
         if logo_src else ""
     )
     signature_html = f"""
-<div class="signature" style="font-family:Calibri,'Segoe UI',Arial,sans-serif;margin-top:32px;margin-left:0;padding-left:0;padding-top:20px;border-top:1px solid #e0e0e0;font-size:13px;color:#444;line-height:1.8;">
+<div class="signature" style="font-family:Aptos,Calibri,'Segoe UI',Arial,sans-serif;margin-top:32px;margin-left:0;padding-left:0;padding-top:20px;border-top:1px solid #e0e0e0;font-size:13px;color:#444;line-height:1.8;">
   {logo_tag}
-  <b style="color:#222;font-size:14px;font-family:Calibri,'Segoe UI',Arial,sans-serif;">{USER_NAME}</b><br>
-  <span style="color:#555;font-family:Calibri,'Segoe UI',Arial,sans-serif;">{COMPANY_NAME}</span><br>
-  <span style="white-space:nowrap;font-family:Calibri,'Segoe UI',Arial,sans-serif;">
-    <a href="mailto:{USER_EMAIL}" style="color:#CC0000;text-decoration:none;font-family:Calibri,'Segoe UI',Arial,sans-serif;">{USER_EMAIL}</a>
+  <b style="color:#222;font-size:14px;font-family:Aptos,Calibri,'Segoe UI',Arial,sans-serif;">{USER_NAME}</b><br>
+  <span style="color:#555;font-family:Aptos,Calibri,'Segoe UI',Arial,sans-serif;">{COMPANY_NAME}</span><br>
+  <span style="white-space:nowrap;font-family:Aptos,Calibri,'Segoe UI',Arial,sans-serif;">
+    <a href="mailto:{USER_EMAIL}" style="color:#CC0000;text-decoration:none;font-family:Aptos,Calibri,'Segoe UI',Arial,sans-serif;">{USER_EMAIL}</a>
     &nbsp;·&nbsp; {USER_PHONE}
   </span>
 </div>"""
@@ -408,7 +408,7 @@ Start with this EXACT branded header HTML:
     closing = closing_lang.get(language.upper(), "Kind regards,")
     html_body = (
         html_body.rstrip()
-        + f'\n<p style="margin-top:24px;margin-left:0;padding-left:0;font-family:Calibri,\'Segoe UI\',Arial,sans-serif;font-size:14px;color:#333;">{closing}</p>'
+        + f'\n<p style="margin-top:24px;margin-left:0;padding-left:0;font-family:Aptos,Calibri,\'Segoe UI\',Arial,sans-serif;font-size:14px;color:#333;">{closing}</p>'
         + signature_html
     )
 
@@ -497,7 +497,7 @@ def save_email_html(deal_id: str, html_body: str, email_type: str = "proposal") 
 
 # ── Emails internos de fecho de deal ─────────────────────────────────────────
 
-def generate_closing_emails(deal: dict, departure_date: str) -> tuple[str, str]:
+def generate_closing_emails(deal: dict, departure_date: str, supplier_date: str = "") -> tuple[str, str]:
     """
     Gera dois emails internos quando um deal é fechado:
       - stocks_html  : para a equipa de stocks/logística
@@ -516,7 +516,7 @@ def generate_closing_emails(deal: dict, departure_date: str) -> tuple[str, str]:
     # ── CSS base ──────────────────────────────────────────────────────────────
     base_css = """
     <style>
-      * { font-family: Calibri, 'Segoe UI', Arial, sans-serif !important; }
+      * { font-family: Aptos, Calibri, 'Segoe UI', Arial, sans-serif !important; }
       body { max-width: 780px; margin: 24px auto; padding: 0 20px 32px; color: #2c2c2c; font-size: 14px; line-height: 1.6; }
       h2 { color: #CC0000; border-bottom: 2px solid #CC0000; padding-bottom: 6px; font-size: 16px; margin-bottom: 16px; }
       table { border-collapse: collapse; width: 100%; margin: 16px 0; }
@@ -558,6 +558,7 @@ def generate_closing_emails(deal: dict, departure_date: str) -> tuple[str, str]:
           <td>{qty}</td>
           <td>{client}</td>
           <td>{departure_date}</td>
+          <td>{supplier_date or "—"}</td>
         </tr>"""
 
         admin_rows += f"""<tr>
@@ -577,7 +578,7 @@ def generate_closing_emails(deal: dict, departure_date: str) -> tuple[str, str]:
     <table>
       <tr>
         <th>SKU</th><th>EAN</th><th>PCL (€)</th>
-        <th>Descrição</th><th>Qty</th><th>Cliente</th><th>Data Prevista Saída</th>
+        <th>Descrição</th><th>Qty</th><th>Cliente</th><th>Data Saída Cliente</th><th>Entrega Worten (Fornecedor)</th>
       </tr>
       {stocks_rows}
     </table>
