@@ -158,6 +158,12 @@ def _wrap_html(body: str) -> str:
       color: #444;
       border-radius: 0 4px 4px 0;
     }}
+    .note-box table {{ width: 100%; border-collapse: collapse; margin: 8px 0 0; }}
+    .note-box table td {{ border: none !important; background: transparent !important;
+                          padding: 5px 8px; font-size: 12.5px; text-align: left; }}
+    .note-box table td:last-child {{ background: #ffffff !important; }}
+    .note-box table tr:nth-child(even) td {{ background: transparent !important; }}
+    .note-box table tr:nth-child(even) td:last-child {{ background: #ffffff !important; }}
     .conditions {{
       background: #f5f5f5;
       border: 1px solid #e0e0e0;
@@ -170,7 +176,6 @@ def _wrap_html(body: str) -> str:
     .conditions table {{ width: 100%; border-collapse: collapse; margin: 0; }}
     .conditions td {{ border: none; padding: 6px 8px; font-size: 13px;
                       text-align: left; vertical-align: top; background: transparent; }}
-    .conditions tr:nth-child(even) td {{ background: #ececec; }}
     .conditions .lbl {{ color: #333; font-weight: 600; width: 200px; }}
     .signature {{
       margin-top: 32px;
@@ -391,7 +396,7 @@ Start with this EXACT branded header HTML:
         f'\n    <tr style="background:transparent;">'
         f'<td style="padding:8px 16px;font-weight:600;width:220px;color:#333;border:none;vertical-align:top;">Incoterm</td>'
         f'<td style="padding:8px 16px;border:none;color:#444;">{effective_incoterm}</td></tr>'
-        f'\n    <tr style="background:#ebebeb;">'
+        f'\n    <tr style="background:transparent;">'
         f'<td style="padding:8px 16px;font-weight:600;width:220px;color:#333;border:none;vertical-align:top;">Payment Conditions</td>'
         f'<td style="padding:8px 16px;border:none;color:#444;">{effective_payment}</td></tr>'
         f'\n    <tr style="background:transparent;">'
