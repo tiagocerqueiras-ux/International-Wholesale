@@ -169,11 +169,8 @@ if page == "🆕  Nova Cotação":
         _is_pt = country.strip().upper() in ("PORTUGAL", "PT")
         vat_options = ["Isento — Exportação", "IVA 23% — Portugal"]
         _iva_idx = 1 if _is_pt else 0
-        if "vat_sel" not in st.session_state:
-            st.session_state["vat_sel"] = vat_options[_iva_idx]
         vat_sel = st.selectbox("IVA", vat_options,
-                               index=vat_options.index(st.session_state["vat_sel"]),
-                               key="vat_sel",
+                               index=_iva_idx,
                                help="Portugal: 23% | Internacional: isento por defeito")
         vat_rate = 0.23 if "23%" in vat_sel else 0.0
     with cc4:

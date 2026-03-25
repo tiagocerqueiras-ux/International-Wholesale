@@ -324,12 +324,16 @@ INSTRUCTIONS:
 9. Do NOT mention stock levels or warehouse quantities anywhere.
 10. Be professional, concise, B2B focused.
 
-CRITICAL FORMATTING RULES:
+CRITICAL FORMATTING RULES — DO NOT DEVIATE UNDER ANY CIRCUMSTANCES:
 - Return ONLY raw HTML — NO markdown fences (no ```html, no ```, no backticks)
-- font-family: Calibri, 'Segoe UI', Arial, sans-serif throughout — no other fonts
+- font-family: Calibri, 'Segoe UI', Arial, sans-serif — NO other fonts ever
 - All table columns centered except Product column (left-aligned)
-- Use CSS classes: note-box, summary-table, conditions, signature, footnote, total-row
-- Primary colour: #CC0000 (Worten red) | Alternate row: #fdeaea
+- Use ONLY these CSS classes: note-box, summary-table, conditions, footnote, total-row
+- NEVER add inline style attributes that set colour, font-family, or background-color
+- Primary colour: #CC0000 (Worten red) ONLY — absolutely no blues, greens or other colours
+- Table alternate rows: #fdeaea — do not change
+- Section backgrounds: white only — no coloured backgrounds on divs or sections
+- NEVER invent new styles — the CSS is already defined in the wrapper
 
 Start with this EXACT branded header HTML:
 <div style="background:#CC0000;padding:20px 28px;border-radius:6px 6px 0 0;margin-bottom:24px;position:relative;">
