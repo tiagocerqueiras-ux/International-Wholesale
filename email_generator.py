@@ -87,7 +87,7 @@ def _wrap_html(body: str) -> str:
 <head>
   <meta charset="utf-8">
   <style>
-    * {{ font-family: Calibri, 'Segoe UI', Arial, sans-serif; box-sizing: border-box; }}
+    * {{ font-family: Calibri, 'Segoe UI', Arial, sans-serif !important; box-sizing: border-box; }}
     body {{
       font-size: 14px;
       max-width: 780px;
@@ -482,3 +482,110 @@ def save_email_html(deal_id: str, html_body: str, email_type: str = "proposal") 
         pass
 
     return str(filepath)
+
+
+# ── Emails internos de fecho de deal ─────────────────────────────────────────
+
+def generate_closing_emails(deal: dict, departure_date: str) -> tuple[str, str]:
+    """
+    Gera dois emails internos quando um deal é fechado:
+      - stocks_html  : para a equipa de stocks/logística
+      - admin_html   : para a equipa administrativa
+    Retorna (stocks_html, admin_html) como strings HTML completas.
+    """
+    from datetime import datetime
+
+    deal_id   = deal.get("Deal ID", "")
+    client    = deal.get("Cliente", "")
+    country   = deal.get("País", "")
+    incoterm  = deal.get("Incoterm", "—")
+    skus_raw  = deal.get("_skus_detail") or {}
+    now_str   = datetime.now().strftime("%d/%m/%Y %H:%M")
+
+    # ── CSS base ──────────────────────────────────────────────────────────────
+    base_css = """
+    <style>
+      * { font-family: Calibri, 'Segoe UI', Arial, sans-serif !important; }
+      body { max-width: 780px; margin: 24px auto; padding: 0 20px 32px; color: #2c2c2c; font-size: 14px; line-height: 1.6; }
+      h2 { color: #CC0000; border-bottom: 2px solid #CC0000; padding-bottom: 6px; font-size: 16px; margin-bottom: 16px; }
+      table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+      th { background: #CC0000; color: #fff; padding: 8px 12px; text-align: center; font-size: 12px; font-weight: 600; }
+      td { border: 1px solid #f0c0c0; padding: 7px 10px; font-size: 13px; text-align: center; vertical-align: middle; }
+      td.lft { text-align: left; }
+      tr:nth-child(even) td { background: #fdeaea; }
+      .meta { background: #f5f5f5; border-left: 4px solid #CC0000; padding: 10px 14px; margin: 12px 0; font-size: 13px; border-radius: 0 4px 4px 0; }
+      .meta b { color: #CC0000; }
+      .footer { font-size: 11px; color: #888; margin-top: 20px; border-top: 1px solid #eee; padding-top: 8px; }
+    </style>"""
+
+    header = f"""<div style="background:#CC0000;padding:14px 20px;margin-bottom:20px;">
+      <span style="color:#fff;font-size:18px;font-weight:700;letter-spacing:1px;">WORTEN</span>
+      <span style="color:#ffcccc;font-size:13px;margin-left:10px;">International Wholesale</span>
+    </div>
+    <div class="meta">
+      <b>Deal ID:</b> {deal_id} &nbsp;|&nbsp;
+      <b>Cliente:</b> {client} ({country}) &nbsp;|&nbsp;
+      <b>Data de fecho:</b> {now_str}
+    </div>"""
+
+    # ── Linhas da tabela ──────────────────────────────────────────────────────
+    stocks_rows = ""
+    admin_rows  = ""
+
+    for sku, info in skus_raw.items():
+        d        = info.get("data") or {}
+        qty      = int(info.get("qty") or 1)
+        ean      = d.get("ean") or "N/A"
+        name     = d.get("name", sku)[:60]
+        pcl      = d.get("pcl") or d.get("ufc_raw") or 0.0
+        sell_prc = info.get("fc_final") or info.get("pvp") or 0.0
+
+        stocks_rows += f"""<tr>
+          <td>{sku}</td><td>{ean}</td>
+          <td>{pcl:.2f}</td>
+          <td class="lft">{name}</td>
+          <td>{qty}</td>
+          <td>{client}</td>
+          <td>{departure_date}</td>
+        </tr>"""
+
+        admin_rows += f"""<tr>
+          <td>{sku}</td><td>{ean}</td>
+          <td>{sell_prc:.2f}</td>
+          <td class="lft">{name}</td>
+          <td>{qty}</td>
+          <td>{client}</td>
+          <td>{incoterm}</td>
+        </tr>"""
+
+    # ── Email Stocks ──────────────────────────────────────────────────────────
+    stocks_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">{base_css}</head><body>
+    {header}
+    <h2>📦 Alerta Stocks — Deal Fechado</h2>
+    <p>O seguinte deal foi fechado e necessita de processamento logístico:</p>
+    <table>
+      <tr>
+        <th>SKU</th><th>EAN</th><th>PCL (€)</th>
+        <th>Descrição</th><th>Qty</th><th>Cliente</th><th>Data Prevista Saída</th>
+      </tr>
+      {stocks_rows}
+    </table>
+    <div class="footer">Email gerado automaticamente por International Wholesale | Worten — {now_str}</div>
+    </body></html>"""
+
+    # ── Email Admin ───────────────────────────────────────────────────────────
+    admin_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">{base_css}</head><body>
+    {header}
+    <h2>📋 Alerta Administrativo — Deal Fechado</h2>
+    <p>O seguinte deal foi fechado e necessita de processamento administrativo:</p>
+    <table>
+      <tr>
+        <th>SKU</th><th>EAN</th><th>Preço Venda (€)</th>
+        <th>Descrição</th><th>Qty</th><th>Cliente</th><th>Incoterm Acordado</th>
+      </tr>
+      {admin_rows}
+    </table>
+    <div class="footer">Email gerado automaticamente por International Wholesale | Worten — {now_str}</div>
+    </body></html>"""
+
+    return stocks_html, admin_html

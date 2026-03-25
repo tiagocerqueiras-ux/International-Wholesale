@@ -67,6 +67,10 @@ SMTP_PASSWORD = _get_secret("SMTP_PASSWORD", "")
 SMTP_HOST     = _get_secret("SMTP_HOST",     "smtp.gmail.com")
 SMTP_PORT     = int(_get_secret("SMTP_PORT", "587"))
 
+# Emails internos para alertas de fecho de deal
+STOCKS_EMAIL = _get_secret("STOCKS_EMAIL", "")
+ADMIN_EMAIL  = _get_secret("ADMIN_EMAIL",  "")
+
 # ── Paths (usados apenas em modo local) ───────────────────────────────────────
 BASE_DIR  = Path(__file__).parent.parent
 DEALS_FILE = BASE_DIR / "Deals_Tracking.xlsx"   # fallback local

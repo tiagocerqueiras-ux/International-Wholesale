@@ -17,6 +17,7 @@ def send_email(
     subject: str,
     html_body: str,
     reply_to: str = None,
+    cc: list = None,
 ) -> tuple[bool, str]:
     """
     Envia email HTML via SMTP.
@@ -28,12 +29,20 @@ def send_email(
     if not SMTP_PASSWORD:
         return False, "SMTP_PASSWORD não configurado. Verifica os secrets."
 
+    # Suporta múltiplos destinatários separados por ";"
+    recipients = [r.strip() for r in to.split(";") if r.strip()]
+    if not recipients:
+        return False, "Nenhum endereço de email válido."
+
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
         msg["From"]    = f"International Wholesale | Worten <{SMTP_EMAIL}>"
-        msg["To"]      = to
+        msg["To"]      = ", ".join(recipients)
         msg["Reply-To"] = reply_to or USER_EMAIL
+        if cc:
+            msg["Cc"] = ", ".join(cc)
+            recipients += cc
 
         # Versão plain text mínima (fallback)
         plain = "Por favor consulte a versão HTML deste email."
@@ -46,7 +55,7 @@ def send_email(
             server.ehlo()
             server.starttls()
             server.login(SMTP_EMAIL, _pwd)
-            server.sendmail(SMTP_EMAIL, [to], msg.as_string())
+            server.sendmail(SMTP_EMAIL, recipients, msg.as_string())
 
         return True, ""
 

@@ -14,10 +14,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 from config import (
     STATUSES, STATUS_COLORS,
     INCOTERMS_LIST, PAYMENT_CONDITIONS_LIST, PAYMENT_CONDITIONS_DEFAULT, INCOTERM,
+    STOCKS_EMAIL, ADMIN_EMAIL,
 )
 from sku_lookup import lookup_skus, search_by_name, build_cache
 from deal_tracker import add_deal, update_status, update_margin, list_deals, get_deal, deal_products_table
-from email_generator import generate_proposal, generate_followup, save_email_html
+from email_generator import generate_proposal, generate_followup, save_email_html, generate_closing_emails
 from email_sender import create_draft, build_subject
 
 # ── Página ────────────────────────────────────────────────────────────────────
@@ -533,6 +534,50 @@ elif page == "📋  Deals em Curso":
                                             st.success("✅ Follow-up enviado!")
                                         else:
                                             st.error(f"Erro: {err}")
+                            except Exception as e:
+                                st.error(f"Erro: {e}")
+                                import traceback; st.code(traceback.format_exc())
+
+                # ── Fechar Deal ─────────────────────────────────────────────
+                st.markdown("---")
+                st.markdown("**🔒 Fechar Deal**")
+                fd1, fd2 = st.columns(2)
+                dep_date = fd1.text_input("Data prevista de saída", placeholder="ex: 15/04/2026",
+                                          key=f"dep_{did}")
+                stocks_to = fd2.text_input("Email Stocks",
+                                           value=STOCKS_EMAIL,
+                                           key=f"sto_{did}",
+                                           help="Separa vários emails com ;")
+                fd3, fd4 = st.columns(2)
+                admin_to = fd3.text_input("Email Administrativo",
+                                          value=ADMIN_EMAIL,
+                                          key=f"adm_{did}",
+                                          help="Separa vários emails com ;")
+                if fd4.button("✅ Fechar & Enviar Alertas Internos",
+                              key=f"close_{did}", type="primary",
+                              use_container_width=True):
+                    if not dep_date:
+                        st.warning("Indica a data prevista de saída.")
+                    elif not (stocks_to or admin_to):
+                        st.warning("Indica pelo menos um email de destino.")
+                    else:
+                        with st.spinner("A gerar e enviar alertas internos..."):
+                            try:
+                                stocks_html, admin_html = generate_closing_emails(deal, dep_date)
+                                errs = []
+                                subj = f"[DEAL FECHADO] {did} — {cl}"
+                                if stocks_to:
+                                    ok, e = create_draft(stocks_to, f"{subj} | Stocks", stocks_html, send=True)
+                                    if not ok: errs.append(f"Stocks: {e}")
+                                if admin_to:
+                                    ok, e = create_draft(admin_to, f"{subj} | Administrativo", admin_html, send=True)
+                                    if not ok: errs.append(f"Admin: {e}")
+                                update_status(did, "Fechado", f"Deal fechado. Saída: {dep_date}")
+                                if errs:
+                                    st.error("Erros: " + " | ".join(errs))
+                                else:
+                                    st.success(f"✅ Deal {did} fechado! Alertas enviados.")
+                                    st.rerun()
                             except Exception as e:
                                 st.error(f"Erro: {e}")
                                 import traceback; st.code(traceback.format_exc())
