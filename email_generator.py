@@ -369,7 +369,7 @@ Start with this EXACT branded header HTML:
         if logo_src else ""
     )
     signature_html = f"""
-<div class="signature" style="font-family:Calibri,'Segoe UI',Arial,sans-serif;margin-top:32px;padding-top:20px;border-top:1px solid #e0e0e0;font-size:13px;color:#444;line-height:1.8;">
+<div class="signature" style="font-family:Calibri,'Segoe UI',Arial,sans-serif;margin-top:32px;margin-left:0;padding-top:20px;border-top:1px solid #e0e0e0;font-size:13px;color:#444;line-height:1.8;">
   {logo_tag}
   <b style="color:#222;font-size:14px;font-family:Calibri,'Segoe UI',Arial,sans-serif;">{USER_NAME}</b><br>
   <span style="color:#555;font-family:Calibri,'Segoe UI',Arial,sans-serif;">{COMPANY_NAME}</span><br>
@@ -393,7 +393,7 @@ Start with this EXACT branded header HTML:
     closing = closing_lang.get(language.upper(), "Kind regards,")
     html_body = (
         html_body.rstrip()
-        + f'\n<p style="margin-top:24px;padding-left:20px;">{closing}</p>'
+        + f'\n<p style="margin-top:24px;font-family:Calibri,\'Segoe UI\',Arial,sans-serif;font-size:14px;color:#333;">{closing}</p>'
         + signature_html
     )
 
