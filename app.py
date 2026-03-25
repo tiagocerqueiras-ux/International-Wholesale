@@ -166,12 +166,17 @@ if page == "🆕  Nova Cotação":
         else:
             payment_conditions = pay_sel
     with cc3:
-        # IVA: Isento por defeito; muda para 23% se país = Portugal
-        _is_pt = country.strip().upper() in ("PORTUGAL", "PT")
+        # IVA: Isento por defeito; muda para 23% só se país = Portugal
+        _is_pt  = country.strip().upper() in ("PORTUGAL", "PT")
         vat_options = ["Isento — Exportação", "IVA 23% — Portugal"]
         _iva_idx = 1 if _is_pt else 0
+        # key muda com país → força reset do widget quando país muda
+        _vat_key = f"vat_{'pt' if _is_pt else 'exp'}"
+        if _vat_key not in st.session_state:
+            st.session_state[_vat_key] = vat_options[_iva_idx]
         vat_sel = st.selectbox("IVA", vat_options,
                                index=_iva_idx,
+                               key=_vat_key,
                                help="Portugal: 23% | Internacional: isento por defeito")
         vat_rate = 0.23 if "23%" in vat_sel else 0.0
     with cc4:

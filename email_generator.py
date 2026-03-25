@@ -365,7 +365,18 @@ Start with this EXACT branded header HTML:
         if body_match:
             html_body = body_match.group(1).strip()
 
-    # 3. Acrescentar assinatura programaticamente no lugar certo
+    # 3. Remover font-family dos inline styles do Claude (o CSS wrapper já define o font)
+    import re as _re2
+    html_body = _re2.sub(
+        r'font-family\s*:[^;"\'}]+[;]?',
+        '',
+        html_body, flags=_re2.IGNORECASE
+    )
+    # Remover font face tags antigas
+    html_body = _re2.sub(r'<font\s[^>]*>', '', html_body, flags=_re2.IGNORECASE)
+    html_body = _re2.sub(r'</font>', '', html_body, flags=_re2.IGNORECASE)
+
+    # 4. Acrescentar assinatura programaticamente no lugar certo
     logo_src = _logo_b64()
     logo_tag = (
         f'<img src="{logo_src}" alt="Worten" '
