@@ -314,11 +314,9 @@ INSTRUCTIONS:
 3. Render the products table with ALL {n_skus} rows — do NOT skip, merge, or omit any product. Use the exact data from PRODUCTS TABLE DATA above.
 4. After the table add the SUPPORT/EIS footnotes (if any).
 5. Show the financial summary as a right-aligned summary block using class="summary-table". Bold the TOTAL line.
-6. After the financial summary include the VAT/transport note box (class="note-box"):
-   "{VAT_TRANSPORT_NOTE}"
-7. End your output immediately after closing the note-box div — do NOT add any commercial conditions section, closing salutation, signature, or any other content after the note-box.
-8. Do NOT mention stock levels or warehouse quantities anywhere.
-9. Be professional, concise, B2B focused.
+6. End your output immediately after the financial summary block (after closing the summary-table div). Do NOT add any note-box, conditions section, closing salutation, signature, or any other content after the financial summary.
+7. Do NOT mention stock levels or warehouse quantities anywhere.
+8. Be professional, concise, B2B focused.
 
 CRITICAL FORMATTING RULES — DO NOT DEVIATE UNDER ANY CIRCUMSTANCES:
 - Return ONLY raw HTML — NO markdown fences (no ```html, no ```, no backticks)
@@ -380,12 +378,41 @@ Start with this EXACT branded header HTML:
     if open_divs > 0:
         html_body = html_body.rstrip() + ('</div>' * open_divs)
 
-    # 6. Blocos Python gerados com inline styles (imunes a herança de CSS pai)
+    # 6. Remover qualquer bloco de condições gerado pelo Claude (tabelas, divs)
+    html_body = _re.sub(
+        r'<div[^>]*class=["\'](?:note-box|conditions)["\'][^>]*>.*?</div>',
+        '', html_body, flags=_re.DOTALL | _re.IGNORECASE
+    )
+    # Remover tabelas com header de condições que Claude ainda possa gerar
+    html_body = _re.sub(
+        r'<table[^>]*>(?:(?!<table).)*?(?:incoterm|warehouse|payment\s+conditions)(?:(?!<table).)*?</table>',
+        '', html_body, flags=_re.DOTALL | _re.IGNORECASE
+    )
+    # Re-fechar divs após limpeza
+    open_divs2 = len(_re.findall(r'<div\b[^>]*>', html_body)) - html_body.count('</div>')
+    if open_divs2 > 0:
+        html_body = html_body.rstrip() + ('</div>' * open_divs2)
+
+    # 7. Blocos Python gerados com inline styles (imunes a herança de CSS pai)
     closing_lang = {
         "EN": "Kind regards,", "PT": "Com os melhores cumprimentos,",
         "ES": "Atentamente,", "FR": "Cordialement,",
     }
     closing = closing_lang.get(language.upper(), "Kind regards,")
+
+    # Nota VAT/transporte — gerada em Python (não pelo Claude)
+    _vat_lines = VAT_TRANSPORT_NOTE.split('\n')
+    note_box_html = (
+        '\n<div style="background:#fff5f5;border-left:4px solid #CC0000;'
+        'padding:12px 16px;margin:20px 0;font-size:12.5px;color:#444;'
+        'border-radius:0 4px 4px 0;">'
+        + ''.join(f'\n  <p style="margin:0 0 4px;">{line}</p>' for line in _vat_lines if line.strip())
+        + '\n</div>'
+    )
+
+    # td_bg aplicado directamente nos <td> para sobrepor o CSS global tr:nth-child(even)
+    _td_lbl = 'padding:8px 16px;font-weight:600;width:220px;color:#333;border:none;vertical-align:top;background:#f5f5f5;'
+    _td_val = 'padding:8px 16px;border:none;color:#444;background:#f5f5f5;'
 
     conditions_html = (
         '\n<h3 style="color:#CC0000;font-size:13px;text-transform:uppercase;'
@@ -393,15 +420,12 @@ Start with this EXACT branded header HTML:
         '\n<div style="background:#f5f5f5;border:1px solid #e0e0e0;'
         'border-radius:4px;padding:4px 0;font-size:13px;">'
         '\n  <table style="width:100%;border-collapse:collapse;margin:0;"><tbody>'
-        f'\n    <tr style="background:transparent;">'
-        f'<td style="padding:8px 16px;font-weight:600;width:220px;color:#333;border:none;vertical-align:top;">Incoterm</td>'
-        f'<td style="padding:8px 16px;border:none;color:#444;">{effective_incoterm}</td></tr>'
-        f'\n    <tr style="background:transparent;">'
-        f'<td style="padding:8px 16px;font-weight:600;width:220px;color:#333;border:none;vertical-align:top;">Payment Conditions</td>'
-        f'<td style="padding:8px 16px;border:none;color:#444;">{effective_payment}</td></tr>'
-        f'\n    <tr style="background:transparent;">'
-        f'<td style="padding:8px 16px;font-weight:600;width:220px;color:#333;border:none;vertical-align:top;">Availability / ETA</td>'
-        f'<td style="padding:8px 16px;border:none;color:#444;">{availability or "Ex-stock"}</td></tr>'
+        f'\n    <tr><td style="{_td_lbl}">Incoterm</td>'
+        f'<td style="{_td_val}">{effective_incoterm}</td></tr>'
+        f'\n    <tr><td style="{_td_lbl}">Payment Conditions</td>'
+        f'<td style="{_td_val}">{effective_payment}</td></tr>'
+        f'\n    <tr><td style="{_td_lbl}">Availability / ETA</td>'
+        f'<td style="{_td_val}">{availability or "Ex-stock"}</td></tr>'
         '\n  </tbody></table>'
         '\n</div>'
     )
@@ -426,6 +450,7 @@ Start with this EXACT branded header HTML:
 
     html_body = (
         html_body.rstrip()
+        + note_box_html
         + conditions_html
         + f'\n<p style="margin-top:24px;font-size:14px;color:#333;">{closing}</p>'
         + signature_html
