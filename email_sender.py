@@ -40,10 +40,12 @@ def send_email(
         msg.attach(MIMEText(plain, "plain", "utf-8"))
         msg.attach(MIMEText(html_body, "html",  "utf-8"))
 
+        # Gmail App Passwords funcionam com ou sem espaços — normalizar
+        _pwd = SMTP_PASSWORD.replace(" ", "")
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as server:
             server.ehlo()
             server.starttls()
-            server.login(SMTP_EMAIL, SMTP_PASSWORD)
+            server.login(SMTP_EMAIL, _pwd)
             server.sendmail(SMTP_EMAIL, [to], msg.as_string())
 
         return True, ""
