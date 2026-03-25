@@ -311,18 +311,9 @@ INSTRUCTIONS:
 5. Show the financial summary as a right-aligned summary block using class="summary-table". Bold the TOTAL line.
 6. After the financial summary include the VAT/transport note box (class="note-box"):
    "{VAT_TRANSPORT_NOTE}"
-7. Include a COMMERCIAL CONDITIONS section using this EXACT HTML structure (no changes):
-   <div class="conditions">
-     <h3>Commercial Conditions</h3>
-     <table><tbody>
-       <tr><td class="lbl">Incoterm</td><td>{effective_incoterm}</td></tr>
-       <tr><td class="lbl">Payment Conditions</td><td>{effective_payment}</td></tr>
-       <tr><td class="lbl">Availability / ETA</td><td>{availability or "Ex-stock"}</td></tr>
-     </tbody></table>
-   </div>
-8. End your output immediately after closing the conditions div — do NOT add any closing salutation, signature, or extra content after it.
-9. Do NOT mention stock levels or warehouse quantities anywhere.
-10. Be professional, concise, B2B focused.
+7. End your output immediately after closing the note-box div — do NOT add any commercial conditions section, closing salutation, signature, or any other content after the note-box.
+8. Do NOT mention stock levels or warehouse quantities anywhere.
+9. Be professional, concise, B2B focused.
 
 CRITICAL FORMATTING RULES — DO NOT DEVIATE UNDER ANY CIRCUMSTANCES:
 - Return ONLY raw HTML — NO markdown fences (no ```html, no ```, no backticks)
@@ -351,6 +342,8 @@ Start with this EXACT branded header HTML:
 
     html_body = response.content[0].text.strip()
 
+    import re as _re
+
     # 1. Remover markdown fences se Claude as incluir
     if html_body.startswith("```"):
         html_body = html_body.split("\n", 1)[-1]
@@ -360,23 +353,44 @@ Start with this EXACT branded header HTML:
 
     # 2. Se Claude devolveu documento HTML completo, extrair só o <body>
     if html_body.lower().startswith("<!doctype") or "<html" in html_body[:100].lower():
-        import re
-        body_match = re.search(r"<body[^>]*>(.*?)</body>", html_body, re.DOTALL | re.IGNORECASE)
+        body_match = _re.search(r"<body[^>]*>(.*?)</body>", html_body, _re.DOTALL | _re.IGNORECASE)
         if body_match:
             html_body = body_match.group(1).strip()
 
     # 3. Remover font-family dos inline styles do Claude (o CSS wrapper já define o font)
-    import re as _re2
-    html_body = _re2.sub(
+    html_body = _re.sub(
         r'font-family\s*:[^;"\'}]+[;]?',
         '',
-        html_body, flags=_re2.IGNORECASE
+        html_body, flags=_re.IGNORECASE
     )
     # Remover font face tags antigas
-    html_body = _re2.sub(r'<font\s[^>]*>', '', html_body, flags=_re2.IGNORECASE)
-    html_body = _re2.sub(r'</font>', '', html_body, flags=_re2.IGNORECASE)
+    html_body = _re.sub(r'<font\s[^>]*>', '', html_body, flags=_re.IGNORECASE)
+    html_body = _re.sub(r'</font>', '', html_body, flags=_re.IGNORECASE)
 
-    # 4. Acrescentar assinatura programaticamente no lugar certo
+    # 4. Remover qualquer bloco de Commercial Conditions gerado pelo Claude
+    #    (gerado em Python mais abaixo para garantir consistência)
+    html_body = _re.sub(
+        r'<div[^>]*class=["\']conditions["\'][^>]*>.*?</div>',
+        '', html_body, flags=_re.DOTALL | _re.IGNORECASE
+    )
+    # Também remover se Claude gerou h3 Commercial Conditions + tabela avulsa
+    html_body = _re.sub(
+        r'<h3[^>]*>\s*commercial conditions\s*</h3>.*?(?=<p|<div|<h[1-6]|$)',
+        '', html_body, flags=_re.DOTALL | _re.IGNORECASE
+    )
+
+    # 4b. Bloco Commercial Conditions gerado em Python (100% consistente)
+    conditions_html = f"""
+<div class="conditions">
+  <h3>Commercial Conditions</h3>
+  <table><tbody>
+    <tr><td class="lbl">Incoterm</td><td>{effective_incoterm}</td></tr>
+    <tr><td class="lbl">Payment Conditions</td><td>{effective_payment}</td></tr>
+    <tr><td class="lbl">Availability / ETA</td><td>{availability or "Ex-stock"}</td></tr>
+  </tbody></table>
+</div>"""
+
+    # 5. Acrescentar assinatura programaticamente no lugar certo
     logo_src = _logo_b64()
     logo_tag = (
         f'<img src="{logo_src}" alt="Worten" '
@@ -395,7 +409,6 @@ Start with this EXACT branded header HTML:
 </div>"""
     # Garantir que a assinatura fica SEMPRE no final, fora de qualquer div
     # Remover qualquer "Kind regards" gerado pelo Claude para evitar duplicado
-    import re as _re
     html_body = _re.sub(
         r'<p[^>]*>\s*(kind regards|best regards|com os melhores cumprimentos'
         r'|cordialement|atentamente)[^<]*</p>',
@@ -408,7 +421,8 @@ Start with this EXACT branded header HTML:
     closing = closing_lang.get(language.upper(), "Kind regards,")
     html_body = (
         html_body.rstrip()
-        + f'\n<p style="margin-top:24px;margin-left:0;padding-left:0;font-family:Aptos,Calibri,\'Segoe UI\',Arial,sans-serif;font-size:14px;color:#333;">{closing}</p>'
+        + conditions_html
+        + f'\n<p style="margin-top:24px;margin-left:0;padding-left:0;font-size:14px;color:#333;">{closing}</p>'
         + signature_html
     )
 
