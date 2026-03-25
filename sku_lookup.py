@@ -162,6 +162,9 @@ def _build_index_pandas(path: Path, entity_filter) -> dict:
         key = str(row.get("sku_id", "") or "").strip()
         if not key or key == "nan":
             continue
+        # Normalizar: "5879983.0" → "5879983"
+        if key.endswith(".0"):
+            key = key[:-2]
         index[key] = {
             "sku_id":    key,
             "entity":    str(row.get("entity", "") or ""),
