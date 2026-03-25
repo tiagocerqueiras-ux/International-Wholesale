@@ -195,12 +195,25 @@ def build_cache(simulator_path=None, entity=None, force=False) -> dict:
     """
     Carrega o índice de SKUs por ordem de prioridade:
       1. Memória (_INDEX)
-      2. Cache JSON local
-      3. Supabase Storage
+      2. simulator_index.json.gz bundled no repositório (cloud/GitHub)
+      3. Cache JSON local
+      4. Supabase Storage
     """
     global _INDEX
     if _INDEX and not force:
         return _INDEX
+
+    # 0. Ficheiro gz bundled no repositório (Streamlit Cloud)
+    import gzip
+    bundled_gz = Path(__file__).parent / "simulator_index.json.gz"
+    if bundled_gz.exists() and not force:
+        try:
+            with open(bundled_gz, "rb") as f:
+                _INDEX = json.loads(gzip.decompress(f.read()).decode("utf-8"))
+            print(f"  Cache bundled carregado: {len(_INDEX):,} SKUs")
+            return _INDEX
+        except Exception as e:
+            print(f"  ⚠  Erro ao ler bundled gz: {e}")
 
     # 1. Cache local (modo dev / Windows)
     source_path = Path(simulator_path or SIMULATOR_FILE)
