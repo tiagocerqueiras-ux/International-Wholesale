@@ -369,12 +369,12 @@ Start with this EXACT branded header HTML:
         if logo_src else ""
     )
     signature_html = f"""
-<div class="signature">
+<div class="signature" style="font-family:Calibri,'Segoe UI',Arial,sans-serif;margin-top:32px;padding-top:20px;border-top:1px solid #e0e0e0;font-size:13px;color:#444;line-height:1.8;">
   {logo_tag}
-  <b>{USER_NAME}</b><br>
-  <span style="color:#555;">{COMPANY_NAME}</span><br>
-  <span style="white-space:nowrap;">
-    <a href="mailto:{USER_EMAIL}" style="color:#CC0000;text-decoration:none;">{USER_EMAIL}</a>
+  <b style="color:#222;font-size:14px;font-family:Calibri,'Segoe UI',Arial,sans-serif;">{USER_NAME}</b><br>
+  <span style="color:#555;font-family:Calibri,'Segoe UI',Arial,sans-serif;">{COMPANY_NAME}</span><br>
+  <span style="white-space:nowrap;font-family:Calibri,'Segoe UI',Arial,sans-serif;">
+    <a href="mailto:{USER_EMAIL}" style="color:#CC0000;text-decoration:none;font-family:Calibri,'Segoe UI',Arial,sans-serif;">{USER_EMAIL}</a>
     &nbsp;·&nbsp; {USER_PHONE}
   </span>
 </div>"""
