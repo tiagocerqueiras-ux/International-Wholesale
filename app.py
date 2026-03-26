@@ -62,7 +62,7 @@ def margin_pct(cost, pvp):
 
 def _clear_state():
     for k in ["product_basket","so_manual","margin_mode","margin_val",
-              "selected_incoterm","payment_conditions","vat_sel"]:
+              "margin_override","selected_incoterm","payment_conditions","vat_sel"]:
         st.session_state.pop(k, None)
 
 # ── Dialog aprovação email ────────────────────────────────────────────────────
@@ -198,6 +198,8 @@ if page == "🆕  Nova Cotação":
         st.session_state["product_basket"] = {}
     if "so_manual" not in st.session_state:
         st.session_state["so_manual"] = {}
+    if "margin_override" not in st.session_state:
+        st.session_state["margin_override"] = {}
 
     col_sa, col_sb = st.columns([2,2])
     with col_sa:
@@ -257,10 +259,11 @@ if page == "🆕  Nova Cotação":
         s_margin_val  = st.session_state.get("margin_val", 5.0)
 
         # Cabeçalho
-        hcols = st.columns([0.5, 1.2, 1.5, 2.8, 1.4, 1.4, 1.6, 1.6, 1.6, 1.4, 0.5])
+        _unit = "%" if s_margin_mode == "Percentagem (%)" else "€"
+        hcols = st.columns([0.5, 1.2, 1.5, 2.8, 1.4, 1.4, 1.4, 1.2, 1.6, 1.4, 1.4, 0.5])
         for col, lbl in zip(hcols, ["Qty","SKU","EAN","Produto",
                                      "FC Simulador","SO Negoc. (€)","FC Final",
-                                     "Preço Cliente","EIS DA","Sell-In","✕"]):
+                                     f"Margem ({_unit})","Preço Cliente","EIS DA","Sell-In","✕"]):
             col.caption(lbl)
         st.markdown("---")
 
@@ -275,7 +278,7 @@ if page == "🆕  Nova Cotação":
             sell_in   = d.get("sell_in")
             ean       = d.get("ean") or "—"
 
-            cols = st.columns([0.5, 1.2, 1.5, 2.8, 1.4, 1.4, 1.6, 1.6, 1.6, 1.4, 0.5])
+            cols = st.columns([0.5, 1.2, 1.5, 2.8, 1.4, 1.4, 1.4, 1.2, 1.6, 1.4, 1.4, 0.5])
 
             qty_map[sku] = cols[0].number_input("", min_value=1, value=1, step=1,
                                                 key=f"qty_{sku}", label_visibility="collapsed")
@@ -305,16 +308,27 @@ if page == "🆕  Nova Cotação":
 
             # FC Final = FC_sim - SO_negociação
             fc_final = round(fc_sim - so_neg, 4) if fc_sim is not None else None
-            pvp = calc_pvp(fc_final, s_margin_mode, s_margin_val)
+
+            # Margem por linha — usa global como default, editável individualmente
+            _m_default = st.session_state["margin_override"].get(sku, s_margin_val)
+            _m_max = 200.0 if s_margin_mode == "Percentagem (%)" else 9999.0
+            _m_line = cols[7].number_input("", min_value=0.0, max_value=_m_max,
+                                           value=float(_m_default), step=0.5, format="%.1f",
+                                           key=f"mg_{sku}", label_visibility="collapsed",
+                                           help="Margem para este SKU (sobrepõe o global)")
+            st.session_state["margin_override"][sku] = _m_line
+
+            pvp = calc_pvp(fc_final, s_margin_mode, _m_line)
 
             cols[6].markdown(f"**{fmt4(fc_final)}**" if fc_final else "—")
-            cols[7].markdown(f"**{fmt4(pvp)}**" if pvp else "—")
-            cols[8].markdown(f"{'⚠️ ' if eis_da>0 else ''}{fmt4(eis_da) if eis_da>0 else '—'}")
-            cols[9].markdown(f"{'✅ ' if sell_in else ''}{fmt4(sell_in) if sell_in else '—'}")
+            cols[8].markdown(f"**{fmt4(pvp)}**" if pvp else "—")
+            cols[9].markdown(f"{'⚠️ ' if eis_da>0 else ''}{fmt4(eis_da) if eis_da>0 else '—'}")
+            cols[10].markdown(f"{'✅ ' if sell_in else ''}{fmt4(sell_in) if sell_in else '—'}")
 
-            if cols[10].button("✕", key=f"rm_{sku}", help="Remover produto"):
+            if cols[11].button("✕", key=f"rm_{sku}", help="Remover produto"):
                 del st.session_state["product_basket"][sku]
                 st.session_state["so_manual"].pop(sku, None)
+                st.session_state["margin_override"].pop(sku, None)
                 st.rerun()
 
         if any_nd:
@@ -331,13 +345,14 @@ if page == "🆕  Nova Cotação":
             so  = d.get("sell_out") or 0
             return round(raw + so, 4) if vat_rate > 0 else round(raw - eis + so, 4)
 
+        _mg_override = st.session_state.get("margin_override", {})
         total_fc_final = sum(
             round(_fc_sim_for(basket[s]) - so_manual_map.get(s, 0), 4) * qty_map[s]
             for s in basket
         )
         total_pvp = sum(
             (calc_pvp(round(_fc_sim_for(basket[s]) - so_manual_map.get(s, 0), 4),
-                      s_margin_mode, s_margin_val) or 0) * qty_map[s]
+                      s_margin_mode, _mg_override.get(s, s_margin_val)) or 0) * qty_map[s]
             for s in basket
         )
         overall_margin = margin_pct(total_fc_final, total_pvp) if total_pvp else 0
@@ -373,16 +388,18 @@ if page == "🆕  Nova Cotação":
         if (criar_deal or criar_email) and client and email:
             skus_data = {}
             for sku in basket:
-                so_neg   = so_manual_map.get(sku, 0.0)
-                fc_sim   = _fc_sim_for(basket[sku])
-                fc_final = round(fc_sim - so_neg, 4)
-                pvp_unit = calc_pvp(fc_final, s_margin_mode, s_margin_val)
+                so_neg    = so_manual_map.get(sku, 0.0)
+                fc_sim    = _fc_sim_for(basket[sku])
+                fc_final  = round(fc_sim - so_neg, 4)
+                _m_sku    = _mg_override.get(sku, s_margin_val)
+                pvp_unit  = calc_pvp(fc_final, s_margin_mode, _m_sku)
                 skus_data[sku] = {
-                    "qty":     qty_map[sku],
-                    "data":    basket[sku],
-                    "so_neg":  so_neg,
+                    "qty":      qty_map[sku],
+                    "data":     basket[sku],
+                    "so_neg":   so_neg,
                     "fc_final": fc_final,
-                    "pvp":     pvp_unit,
+                    "pvp":      pvp_unit,
+                    "margin":   _m_sku,
                 }
 
             with st.spinner("A criar deal..."):
