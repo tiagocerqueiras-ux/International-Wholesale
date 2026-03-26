@@ -104,6 +104,7 @@ def add_deal(
     payment_conditions: str = "",
     freight_cost: float = 0.0,
     availability: str = "",
+    salesperson_email: str = "",
 ) -> str:
     deal_id = _next_deal_id()
     now     = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -156,6 +157,7 @@ def add_deal(
         "updated_at":         now,
         "notes":              notes,
         "skus_detail":        skus_data,
+        "salesperson_email":  salesperson_email,
     }
 
     _get_client().table("deals").insert(row).execute()
@@ -202,16 +204,18 @@ def update_margin(deal_id: str, margin_pct: float, pvp_total: float = None) -> b
         return False
 
 
-def list_deals(status_filter: str = None) -> list:
+def list_deals(status_filter: str = None, salesperson_filter: str = None) -> list:
     try:
         q = _get_client().table("deals").select(
             "deal_id,created_at,client,country,client_email,language,"
             "sku_ids,products,avg_unit_cost,eis_da_total,has_sell_in,has_sell_out,"
             "qty_total,proposed_value,margin_pct,incoterm,payment_conditions,"
-            "vat,freight,availability,status,updated_at,notes"
+            "vat,freight,availability,status,updated_at,notes,salesperson_email"
         ).order("created_at", desc=False)
         if status_filter:
             q = q.eq("status", status_filter)
+        if salesperson_filter:
+            q = q.ilike("salesperson_email", salesperson_filter)
         res = q.execute()
         return [_row_to_deal(r) for r in (res.data or [])]
     except Exception as e:

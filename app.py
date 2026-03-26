@@ -25,6 +25,11 @@ from client_tracker import (
     list_clients, count_clients, get_client_deals, bulk_import_clients,
     CLIENT_STATUSES, CLIENT_TYPES, MARKETS, BRANDS_LIST, CATEGORIES_LIST,
 )
+from auth_manager import (
+    login, has_users, add_user, list_users, update_user, reset_password,
+    ROLES, ROLE_LABELS, ROLE_BADGE_COLOR, PAGES_BY_ROLE,
+    CAN_SEE_MARGINS, CAN_EDIT_DEALS, OWN_DATA_ONLY,
+)
 
 # ── Página ────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Cotação Agent — International Wholesale", page_icon="📦",
@@ -117,66 +122,107 @@ def email_approval_dialog():
             st.rerun()
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SEGURANÇA — Password gate (Camada 2)
+# SEGURANÇA — Login multi-utilizador
 # ══════════════════════════════════════════════════════════════════════════════
-def _check_auth() -> bool:
-    """Bloqueia o acesso à app até ser introduzida a password correcta.
-    Se APP_PASSWORD não estiver definida nos Secrets, não bloqueia (dev mode)."""
-    _pwd_secret = ""
-    try:
-        _pwd_secret = st.secrets.get("APP_PASSWORD", "")
-    except Exception:
-        pass
-    if not _pwd_secret:
-        return True  # sem password configurada — modo desenvolvimento
+_LOGIN_CSS = """
+<style>
+  [data-testid="stSidebar"] { display: none; }
+  .auth-box { max-width: 400px; margin: 80px auto; padding: 40px 36px;
+              border-radius: 10px; box-shadow: 0 4px 24px rgba(0,0,0,.10);
+              background: #fff; text-align: center; }
+  .auth-box h2 { color: #CC0000; font-size: 22px; margin-bottom: 4px; }
+  .auth-box p  { color: #666; font-size: 13px; margin-bottom: 24px; }
+</style>
+"""
 
-    if st.session_state.get("_auth_ok"):
+def _show_login():
+    """Ecrã de login. Devolve True se autenticado."""
+    if st.session_state.get("current_user"):
         return True
 
-    # ── Ecrã de login ────────────────────────────────────────────────────────
-    st.markdown("""
-    <style>
-      [data-testid="stSidebar"] { display: none; }
-      .login-box { max-width: 380px; margin: 80px auto; padding: 40px 36px;
-                   border-radius: 10px; box-shadow: 0 4px 24px rgba(0,0,0,.10);
-                   background: #fff; text-align: center; }
-      .login-box h2 { color: #CC0000; font-size: 22px; margin-bottom: 4px; }
-      .login-box p  { color: #666; font-size: 13px; margin-bottom: 24px; }
-    </style>
-    <div class="login-box">
-      <h2>🔐 International Wholesale</h2>
-      <p>Acesso restrito à equipa Worten</p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(_LOGIN_CSS, unsafe_allow_html=True)
+    st.markdown('<div class="auth-box"><h2>🔐 International Wholesale</h2>'
+                '<p>BoxMovers B2B Export — Worten</p></div>', unsafe_allow_html=True)
 
+    # ── Primeiro acesso: sem utilizadores criados ─────────────────────────
+    try:
+        _no_users = not has_users()
+    except Exception:
+        _no_users = False
+
+    if _no_users:
+        st.info("Primeiro acesso — cria a conta de administrador.")
+        col = st.columns([1, 2, 1])[1]
+        with col:
+            su_name  = st.text_input("Nome completo", key="su_name")
+            su_email = st.text_input("Email", key="su_email")
+            su_pwd   = st.text_input("Password", type="password", key="su_pwd")
+            su_pwd2  = st.text_input("Confirmar password", type="password", key="su_pwd2")
+            if st.button("Criar conta Owner →", type="primary", use_container_width=True):
+                if not su_name or not su_email or not su_pwd:
+                    st.error("Preenche todos os campos.")
+                elif su_pwd != su_pwd2:
+                    st.error("As passwords não coincidem.")
+                else:
+                    ok, msg = add_user(su_name, su_email, su_pwd, "owner")
+                    if ok:
+                        user = login(su_email, su_pwd)
+                        st.session_state["current_user"] = user
+                        st.rerun()
+                    else:
+                        st.error(f"Erro: {msg}")
+        return False
+
+    # ── Login normal ──────────────────────────────────────────────────────
     col = st.columns([1, 2, 1])[1]
     with col:
-        pwd_input = st.text_input("Password", type="password",
-                                  placeholder="Introduz a password",
-                                  label_visibility="collapsed")
-        if st.button("Entrar →", use_container_width=True, type="primary"):
-            if pwd_input == _pwd_secret:
-                st.session_state["_auth_ok"] = True
+        lg_email = st.text_input("Email", key="lg_email",
+                                 placeholder="nome@empresa.com")
+        lg_pwd   = st.text_input("Password", type="password", key="lg_pwd",
+                                 placeholder="••••••••")
+        if st.button("Entrar →", type="primary", use_container_width=True):
+            user = login(lg_email, lg_pwd)
+            if user:
+                st.session_state["current_user"] = user
                 st.rerun()
             else:
-                st.error("Password incorrecta.")
+                st.error("Email ou password incorrectos.")
     return False
 
-if not _check_auth():
+
+if not _show_login():
     st.stop()
+
+# ── Utilizador autenticado ────────────────────────────────────────────────────
+_cu   = st.session_state["current_user"]
+_role = _cu.get("role", "comercial_interno")
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## 📦 International Wholesale")
-    st.markdown("**Cotação Agent**")
+    st.markdown("**BoxMovers B2B Export**")
     st.markdown("---")
-    page = st.radio("Nav", ["🆕  Nova Cotação","📋  Deals em Curso",
-                             "👥  CRM — Clientes",
-                             "🏭  Pedido Fornecedor","🔍  Pesquisar Produto"],
+
+    # Nav filtrado pelo role
+    _nav_pages = PAGES_BY_ROLE.get(_role, PAGES_BY_ROLE["comercial_interno"])
+    page = st.radio("Nav", _nav_pages,
                     label_visibility="collapsed", key="nav")
     st.markdown("---")
-    st.markdown("*Tiago Cerqueira*")
-    st.markdown("*tdcerqueira@worten.pt*")
+
+    # Info do utilizador + badge de role
+    _badge_color = ROLE_BADGE_COLOR.get(_role, "#333")
+    st.markdown(
+        f"*{_cu.get('name','—')}*  \n"
+        f"*{_cu.get('email','—')}*  \n"
+        f'<span style="background:{_badge_color};color:#fff;'
+        f'font-size:11px;padding:2px 8px;border-radius:10px;">'
+        f'{ROLE_LABELS.get(_role,_role)}</span>',
+        unsafe_allow_html=True
+    )
+    st.markdown("")
+    if st.button("🚪 Sair", use_container_width=True):
+        st.session_state.pop("current_user", None)
+        st.rerun()
 
 # ── Resultado de aprovação pendente ──────────────────────────────────────────
 if "email_result" in st.session_state and page == "🆕  Nova Cotação":
@@ -469,7 +515,8 @@ if page == "🆕  Nova Cotação":
                                    incoterm=s_incoterm,
                                    payment_conditions=s_payment,
                                    freight_cost=freight_cost,
-                                   availability=availability)
+                                   availability=availability,
+                                   salesperson_email=_cu.get("email",""))
 
             if criar_deal:
                 st.success(f"✅ Deal **{deal_id}** criado como Rascunho.")
@@ -515,7 +562,10 @@ elif page == "📋  Deals em Curso":
     status_filter = cf1.selectbox("Filtrar status", ["Todos"]+STATUSES)
     search_client = cf2.text_input("Pesquisar cliente", placeholder="Nome...")
 
-    deals = list_deals(None if status_filter=="Todos" else status_filter)
+    # Contractors vêem apenas os seus próprios deals
+    _sp_filter = _cu.get("email") if _role in OWN_DATA_ONLY else None
+    deals = list_deals(None if status_filter=="Todos" else status_filter,
+                       salesperson_filter=_sp_filter)
     if search_client:
         deals = [d for d in deals if search_client.lower() in str(d.get("Cliente","")).lower()]
 
@@ -1206,3 +1256,84 @@ elif page == "🔍  Pesquisar Produto":
                 st.info(f"💡 Usa o SKU **{r['sku_id']}** na página **Nova Cotação**.")
         elif eq:
             st.caption("Insere pelo menos 8 dígitos.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PÁGINA ADMIN — Gestão de Utilizadores (Owner only)
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "⚙️  Administração":
+    if _role != "owner":
+        st.error("Acesso restrito.")
+        st.stop()
+
+    st.title("⚙️ Administração — Utilizadores")
+
+    tab_users, tab_new_user = st.tabs(["👤 Utilizadores", "➕ Novo Utilizador"])
+
+    with tab_users:
+        users = list_users()
+        st.caption(f"{len(users)} utilizador(es)")
+        for u in users:
+            uid    = str(u.get("id",""))
+            uname  = u.get("name","—")
+            uemail = u.get("email","—")
+            urole  = u.get("role","—")
+            uact   = u.get("is_active", True)
+            ulast  = u.get("last_login","—") or "Nunca"
+
+            _badge = ROLE_BADGE_COLOR.get(urole,"#333")
+            with st.expander(
+                f"{'🟢' if uact else '⚫'} **{uname}** — {uemail}  ·  "
+                f"{ROLE_LABELS.get(urole,urole)}  ·  Último login: {ulast}"
+            ):
+                ua1, ua2, ua3 = st.columns(3)
+                new_name  = ua1.text_input("Nome", value=uname, key=f"un_{uid}")
+                new_role  = ua2.selectbox("Perfil", ROLES,
+                    index=ROLES.index(urole) if urole in ROLES else 0,
+                    format_func=lambda r: ROLE_LABELS.get(r,r),
+                    key=f"ur_{uid}")
+                new_active = ua3.checkbox("Ativo", value=uact, key=f"ua_{uid}")
+
+                if st.button("💾 Guardar", key=f"usave_{uid}"):
+                    ok = update_user(uid, {
+                        "name": new_name, "role": new_role, "is_active": new_active
+                    })
+                    st.success("✅ Guardado.") if ok else st.error("Erro.")
+                    st.rerun()
+
+                st.markdown("---")
+                st.markdown("**Reset de Password**")
+                rp1, rp2, rp3 = st.columns(3)
+                new_pwd  = rp1.text_input("Nova password", type="password", key=f"np_{uid}")
+                new_pwd2 = rp2.text_input("Confirmar", type="password", key=f"np2_{uid}")
+                rp3.markdown("<br>", unsafe_allow_html=True)
+                if rp3.button("🔑 Reset", key=f"rp_{uid}"):
+                    if not new_pwd:
+                        st.error("Introduz a nova password.")
+                    elif new_pwd != new_pwd2:
+                        st.error("As passwords não coincidem.")
+                    else:
+                        ok = reset_password(uid, new_pwd)
+                        st.success("✅ Password alterada.") if ok else st.error("Erro.")
+
+    with tab_new_user:
+        st.subheader("Criar Novo Utilizador")
+        nu1, nu2 = st.columns(2)
+        nu_name  = nu1.text_input("Nome completo *", key="nu_name")
+        nu_email = nu2.text_input("Email *", key="nu_email")
+        nu3, nu4 = st.columns(2)
+        nu_role  = nu3.selectbox("Perfil *", ROLES,
+                                 format_func=lambda r: ROLE_LABELS.get(r,r),
+                                 key="nu_role")
+        nu_pwd   = nu4.text_input("Password inicial *", type="password", key="nu_pwd")
+
+        if st.button("➕ Criar Utilizador", type="primary", key="btn_nu"):
+            if not nu_name or not nu_email or not nu_pwd:
+                st.error("Preenche todos os campos obrigatórios.")
+            else:
+                ok, msg = add_user(nu_name, nu_email, nu_pwd, nu_role)
+                if ok:
+                    st.success(f"✅ Utilizador **{nu_name}** criado com perfil **{ROLE_LABELS.get(nu_role,nu_role)}**.")
+                    st.rerun()
+                else:
+                    st.error(f"Erro: {msg}")
