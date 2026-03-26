@@ -20,6 +20,11 @@ from sku_lookup import lookup_skus, search_by_name, build_cache
 from deal_tracker import add_deal, update_status, update_margin, list_deals, get_deal, deal_products_table
 from email_generator import generate_proposal, generate_followup, save_email_html, generate_closing_emails, generate_supplier_request
 from email_sender import create_draft, build_subject
+from client_tracker import (
+    add_client, update_client, get_client, get_client_by_email,
+    list_clients, count_clients, get_client_deals, bulk_import_clients,
+    CLIENT_STATUSES, CLIENT_TYPES, MARKETS, BRANDS_LIST, CATEGORIES_LIST,
+)
 
 # ── Página ────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Cotação Agent — International Wholesale", page_icon="📦",
@@ -166,6 +171,7 @@ with st.sidebar:
     st.markdown("**Cotação Agent**")
     st.markdown("---")
     page = st.radio("Nav", ["🆕  Nova Cotação","📋  Deals em Curso",
+                             "👥  CRM — Clientes",
                              "🏭  Pedido Fornecedor","🔍  Pesquisar Produto"],
                     label_visibility="collapsed", key="nav")
     st.markdown("---")
@@ -189,12 +195,15 @@ if "pending_email" in st.session_state:
 if page == "🆕  Nova Cotação":
     st.title("🆕 Nova Cotação")
 
+    # ── Prefill a partir do CRM ───────────────────────────────────────────────
+    _crm_pre = st.session_state.pop("crm_prefill", {})
+
     # ── 1. Cliente ────────────────────────────────────────────────────────────
     st.subheader("1. Dados do Cliente")
     c1, c2, c3, c4 = st.columns([2,1.5,2,1])
-    client   = c1.text_input("Nome do cliente *", placeholder="Ex: Geppit Group EOOD")
-    country  = c2.text_input("País *", placeholder="Ex: Bulgaria")
-    email    = c3.text_input("Email do cliente *", placeholder="Ex: contact@geppit.eu")
+    client   = c1.text_input("Nome do cliente *", value=_crm_pre.get("client",""), placeholder="Ex: Geppit Group EOOD")
+    country  = c2.text_input("País *", value=_crm_pre.get("country",""), placeholder="Ex: Bulgaria")
+    email    = c3.text_input("Email do cliente *", value=_crm_pre.get("email",""), placeholder="Ex: contact@geppit.eu")
     language = c4.selectbox("Língua", ["EN","PT","ES","FR"])
     notes = st.text_area("Notas / instruções adicionais para o email (opcional)", height=55,
         placeholder="Ex: desconto extra 2%, prazo especial...",
@@ -863,6 +872,282 @@ elif page == "🏭  Pedido Fornecedor":
             )
     else:
         st.info("Adiciona produtos para criar o pedido ao fornecedor.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PÁGINA 3 — CRM — CLIENTES
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "👥  CRM — Clientes":
+    import pandas as pd
+
+    st.title("👥 CRM — Clientes B2B")
+
+    # ── Tabs principais ───────────────────────────────────────────────────────
+    tab_list, tab_new, tab_import = st.tabs(["📋 Lista de Clientes", "➕ Novo Cliente", "📥 Importar"])
+
+    # ════════════════════════════════════════════════════════════════════════
+    # TAB 1 — LISTA
+    # ════════════════════════════════════════════════════════════════════════
+    with tab_list:
+        # Filtros
+        fc1, fc2, fc3, fc4, fc5 = st.columns([2, 1.5, 1.5, 1.5, 1.5])
+        crm_search   = fc1.text_input("Pesquisar empresa", placeholder="Nome...", key="crm_search")
+        crm_status   = fc2.selectbox("Status", ["Todos"] + CLIENT_STATUSES, key="crm_status")
+        crm_market   = fc3.selectbox("Mercado", ["Todos"] + MARKETS, key="crm_market")
+        crm_type     = fc4.selectbox("Tipo", ["Todos"] + CLIENT_TYPES, key="crm_type")
+        crm_country  = fc5.text_input("País", placeholder="Ex: Poland", key="crm_country")
+
+        clients = list_clients(
+            status      = None if crm_status  == "Todos" else crm_status,
+            market      = None if crm_market  == "Todos" else crm_market,
+            client_type = None if crm_type    == "Todos" else crm_type,
+            country     = crm_country or None,
+            search      = crm_search or None,
+        )
+
+        st.caption(f"{len(clients)} cliente(s)")
+
+        if not clients:
+            st.info("Sem clientes para os filtros selecionados.")
+        else:
+            STATUS_ICON = {"Ativo":"🟢","Inativo":"⚫","Prospeto":"🔵","Bloqueado":"🔴"}
+            for c in clients:
+                cid    = str(c.get("id",""))
+                cname  = c.get("company_name","—")
+                cctry  = c.get("country","—")
+                cstat  = c.get("status","—")
+                cemail = c.get("contact_email","")
+                ctype  = c.get("client_type","—")
+                cphone = c.get("contact_phone","")
+                brands = c.get("brands") or []
+
+                with st.expander(
+                    f"{STATUS_ICON.get(cstat,'⚪')} **{cname}** — {cctry}  ·  {ctype}  ·  {cstat}"
+                ):
+                    # ── Cabeçalho info ─────────────────────────────────────
+                    i1, i2, i3, i4 = st.columns(4)
+                    i1.markdown(f"**Email**  \n{cemail or '—'}")
+                    i2.markdown(f"**Telefone**  \n{cphone or '—'}")
+                    i3.markdown(f"**Mercado**  \n{c.get('market','—')}")
+                    i4.markdown(f"**Incoterm**  \n{c.get('incoterm','—')}")
+
+                    if brands:
+                        st.markdown(f"**Marcas:** {', '.join(brands)}")
+                    if c.get("notes"):
+                        st.caption(f"📝 {c['notes'][:120]}")
+
+                    # ── Histórico de deals ─────────────────────────────────
+                    if cemail:
+                        client_deals = get_client_deals(cemail)
+                        if client_deals:
+                            st.markdown("**Histórico de Deals**")
+                            df_d = pd.DataFrame(client_deals)
+                            df_d = df_d.rename(columns={
+                                "deal_id":"Deal ID","created_at":"Data",
+                                "status":"Status","proposed_value":"Valor (€)",
+                                "margin_pct":"Margem","products":"Produtos",
+                            })
+                            cols_show = [c for c in ["Deal ID","Data","Status","Valor (€)","Margem","Produtos"] if c in df_d.columns]
+                            st.dataframe(df_d[cols_show], use_container_width=True, hide_index=True)
+                        else:
+                            st.caption("Sem deals registados para este cliente.")
+
+                    st.markdown("---")
+
+                    # ── Editar cliente ─────────────────────────────────────
+                    with st.expander("✏️ Editar dados do cliente", expanded=False):
+                        full = get_client(cid)
+                        if full:
+                            e1, e2, e3 = st.columns(3)
+                            e_company  = e1.text_input("Nome Empresa *", value=full.get("company_name",""), key=f"ec_{cid}")
+                            e_legal    = e2.text_input("Nome Legal", value=full.get("legal_name",""), key=f"el_{cid}")
+                            e_vat      = e3.text_input("VAT / NIF", value=full.get("vat",""), key=f"ev_{cid}")
+
+                            e4, e5, e6 = st.columns(3)
+                            e_country  = e4.text_input("País", value=full.get("country",""), key=f"eco_{cid}")
+                            e_market   = e5.selectbox("Mercado", MARKETS,
+                                index=MARKETS.index(full.get("market","EU")) if full.get("market") in MARKETS else 0,
+                                key=f"em_{cid}")
+                            e_ctype    = e6.selectbox("Tipo Cliente", CLIENT_TYPES,
+                                index=CLIENT_TYPES.index(full.get("client_type","Distribuidor")) if full.get("client_type") in CLIENT_TYPES else 0,
+                                key=f"ect_{cid}")
+
+                            e7, e8 = st.columns(2)
+                            e_addr   = e7.text_input("Morada", value=full.get("address",""), key=f"ea_{cid}")
+                            e_city   = e8.text_input("Cidade", value=full.get("city",""), key=f"ecity_{cid}")
+
+                            e9, e10, e11 = st.columns(3)
+                            e_cname  = e9.text_input("Contacto — Nome", value=full.get("contact_name",""), key=f"ecn_{cid}")
+                            e_cemail = e10.text_input("Contacto — Email", value=full.get("contact_email",""), key=f"ece_{cid}")
+                            e_cphone = e11.text_input("Contacto — Telefone", value=full.get("contact_phone",""), key=f"ecp_{cid}")
+
+                            e12, e13 = st.columns(2)
+                            e_inc    = e12.text_input("Incoterm", value=full.get("incoterm",""), key=f"einc_{cid}")
+                            e_pay    = e13.text_input("Condições Pagamento", value=full.get("payment_terms",""), key=f"epay_{cid}")
+
+                            e_brands = st.multiselect("Marcas", BRANDS_LIST,
+                                default=[b for b in (full.get("brands") or []) if b in BRANDS_LIST],
+                                key=f"ebr_{cid}")
+                            e_cats   = st.multiselect("Categorias", CATEGORIES_LIST,
+                                default=[c2 for c2 in (full.get("categories") or []) if c2 in CATEGORIES_LIST],
+                                key=f"ecat_{cid}")
+
+                            e_stat   = st.selectbox("Status", CLIENT_STATUSES,
+                                index=CLIENT_STATUSES.index(full.get("status","Ativo")) if full.get("status") in CLIENT_STATUSES else 0,
+                                key=f"est_{cid}")
+                            e_notes  = st.text_area("Notas", value=full.get("notes",""), height=70, key=f"en_{cid}")
+
+                            if st.button("💾 Guardar Alterações", key=f"esave_{cid}", type="primary"):
+                                ok = update_client(cid, {
+                                    "company_name":  e_company,
+                                    "legal_name":    e_legal,
+                                    "vat":           e_vat,
+                                    "country":       e_country,
+                                    "market":        e_market,
+                                    "client_type":   e_ctype,
+                                    "address":       e_addr,
+                                    "city":          e_city,
+                                    "contact_name":  e_cname,
+                                    "contact_email": e_cemail,
+                                    "contact_phone": e_cphone,
+                                    "incoterm":      e_inc,
+                                    "payment_terms": e_pay,
+                                    "brands":        e_brands,
+                                    "categories":    e_cats,
+                                    "status":        e_stat,
+                                    "notes":         e_notes,
+                                })
+                                if ok:
+                                    st.success("✅ Cliente actualizado.")
+                                    st.rerun()
+                                else:
+                                    st.error("Erro ao guardar.")
+
+                    # ── Botão Nova Cotação para este cliente ───────────────
+                    if st.button("✉️ Nova Cotação para este Cliente", key=f"nc_{cid}"):
+                        full2 = get_client(cid) or c
+                        st.session_state["crm_prefill"] = {
+                            "client":   full2.get("company_name",""),
+                            "email":    full2.get("contact_email",""),
+                            "country":  full2.get("country",""),
+                        }
+                        st.session_state["nav"] = "🆕  Nova Cotação"
+                        st.rerun()
+
+    # ════════════════════════════════════════════════════════════════════════
+    # TAB 2 — NOVO CLIENTE
+    # ════════════════════════════════════════════════════════════════════════
+    with tab_new:
+        st.subheader("Novo Cliente")
+        n1, n2, n3 = st.columns(3)
+        new_company  = n1.text_input("Nome Empresa *", key="new_company")
+        new_legal    = n2.text_input("Nome Legal / Faturação", key="new_legal")
+        new_vat      = n3.text_input("VAT / NIF", key="new_vat")
+
+        n4, n5, n6 = st.columns(3)
+        new_country  = n4.text_input("País *", key="new_country")
+        new_market   = n5.selectbox("Mercado", MARKETS, key="new_market")
+        new_ctype    = n6.selectbox("Tipo de Cliente", CLIENT_TYPES, key="new_ctype")
+
+        n7, n8, n9 = st.columns(3)
+        new_addr     = n7.text_input("Morada", key="new_addr")
+        new_zip      = n8.text_input("ZIP / Código Postal", key="new_zip")
+        new_city     = n9.text_input("Cidade", key="new_city")
+
+        st.markdown("**Contacto Principal**")
+        c1, c2, c3, c4 = st.columns(4)
+        new_cname    = c1.text_input("Nome", key="new_cname")
+        new_crole    = c2.text_input("Cargo", key="new_crole")
+        new_cemail   = c3.text_input("Email *", key="new_cemail")
+        new_cphone   = c4.text_input("Telefone", key="new_cphone")
+        new_linkedin = st.text_input("LinkedIn", key="new_linkedin")
+
+        st.markdown("**Condições Comerciais**")
+        p1, p2, p3 = st.columns(3)
+        new_inc      = p1.text_input("Incoterm", placeholder="Ex: EXW — Ex Works", key="new_inc")
+        new_pay      = p2.text_input("Condições Pagamento", placeholder="Ex: 100% T/T", key="new_pay")
+        new_curr     = p3.selectbox("Moeda", ["EUR","USD","GBP","CHF"], key="new_curr")
+
+        st.markdown("**Especialização**")
+        new_brands   = st.multiselect("Marcas de Interesse", BRANDS_LIST, key="new_brands")
+        new_cats     = st.multiselect("Categorias", CATEGORIES_LIST, key="new_cats")
+
+        p4, p5 = st.columns(2)
+        new_stat     = p4.selectbox("Status", CLIENT_STATUSES, key="new_stat")
+        new_notes    = p5.text_area("Notas", height=80, key="new_notes")
+
+        if st.button("💾 Criar Cliente", type="primary", use_container_width=True, key="btn_new_client"):
+            if not new_company or not new_country:
+                st.error("⚠️ Preenche pelo menos o **Nome da Empresa** e o **País**.")
+            else:
+                cid_new = add_client({
+                    "company_name":   new_company,
+                    "legal_name":     new_legal,
+                    "vat":            new_vat,
+                    "country":        new_country,
+                    "market":         new_market,
+                    "client_type":    new_ctype,
+                    "address":        new_addr,
+                    "zip_code":       new_zip,
+                    "city":           new_city,
+                    "contact_name":   new_cname,
+                    "contact_role":   new_crole,
+                    "contact_email":  new_cemail,
+                    "contact_phone":  new_cphone,
+                    "contact_linkedin": new_linkedin,
+                    "incoterm":       new_inc,
+                    "payment_terms":  new_pay,
+                    "currency":       new_curr,
+                    "brands":         new_brands,
+                    "categories":     new_cats,
+                    "status":         new_stat,
+                    "notes":          new_notes,
+                })
+                if cid_new:
+                    st.success(f"✅ Cliente **{new_company}** criado (ID: {cid_new}).")
+                    st.rerun()
+                else:
+                    st.error("Erro ao criar cliente.")
+
+    # ════════════════════════════════════════════════════════════════════════
+    # TAB 3 — IMPORTAR
+    # ════════════════════════════════════════════════════════════════════════
+    with tab_import:
+        st.subheader("Importar Clientes via Excel")
+        st.markdown("""
+        Faz upload de um ficheiro Excel com os clientes. As colunas devem incluir:
+        `company_name`, `country`, `contact_email` (obrigatórias) e opcionalmente:
+        `legal_name`, `vat`, `market`, `city`, `address`, `zip_code`,
+        `contact_name`, `contact_phone`, `client_type`, `incoterm`, `payment_terms`, `notes`
+        """)
+
+        uploaded = st.file_uploader("Ficheiro Excel (.xlsx)", type=["xlsx"], key="crm_upload")
+        if uploaded:
+            try:
+                df_imp = pd.read_excel(uploaded)
+                st.success(f"✅ {len(df_imp)} linhas detectadas")
+                st.dataframe(df_imp.head(5), use_container_width=True, hide_index=True)
+
+                if st.button("📥 Importar para CRM", type="primary", key="btn_import"):
+                    rows = df_imp.where(pd.notnull(df_imp), None).to_dict("records")
+                    # Normalizar: arrays de texto para brands/categories se existirem
+                    for r in rows:
+                        for arr_col in ("brands", "categories"):
+                            if arr_col in r and isinstance(r[arr_col], str):
+                                r[arr_col] = [x.strip() for x in r[arr_col].split(",") if x.strip()]
+                            elif arr_col not in r:
+                                r[arr_col] = []
+                    with st.spinner(f"A importar {len(rows)} clientes..."):
+                        ok_n, err_n = bulk_import_clients(rows)
+                    st.success(f"✅ {ok_n} clientes importados.")
+                    if err_n:
+                        st.warning(f"⚠️ {err_n} erros.")
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao ler ficheiro: {e}")
+
+        st.markdown("---")
+        st.caption(f"Total de clientes na base de dados: **{count_clients()}**")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
