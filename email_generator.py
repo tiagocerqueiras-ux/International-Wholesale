@@ -688,20 +688,23 @@ def generate_supplier_request(
         else:
             fc_sim = info.get("fc_final")
 
-        so_neg   = float(so_manual.get(sku, info.get("so_neg", 0.0)))
-        fc_final = round(fc_sim - so_neg, 4) if fc_sim is not None else None
+        so_neg       = float(so_manual.get(sku, info.get("so_neg", 0.0)))
+        fc_final     = round(fc_sim - so_neg, 4) if fc_sim is not None else None
+        fc_sim_str   = "—" if fc_sim is None else "{:.4f}".format(fc_sim)
+        fc_final_str = "—" if fc_final is None else "{:.4f}".format(fc_final)
 
         bg = "#f5f5f5" if i % 2 == 0 else "#ffffff"
-        rows_html += f"""
-        <tr style="background:{bg};">
-          <td style="text-align:center;">{qty}</td>
-          <td style="text-align:center;font-family:monospace;">{sku}</td>
-          <td style="text-align:center;">{ean}</td>
-          <td style="text-align:left;">{brand} {name}</td>
-          <td style="text-align:center;">{"—" if fc_sim is None else f"{fc_sim:.4f}"}</td>
-          <td style="text-align:center;color:#CC0000;font-weight:600;">{so_neg:.2f}</td>
-          <td style="text-align:center;font-weight:700;">{"—" if fc_final is None else f"{fc_final:.4f}"}</td>
-        </tr>"""
+        rows_html += (
+            f'<tr style="background:{bg};">'
+            f'<td style="text-align:center;">{qty}</td>'
+            f'<td style="text-align:center;font-family:monospace;">{sku}</td>'
+            f'<td style="text-align:center;">{ean}</td>'
+            f'<td style="text-align:left;">{brand} {name}</td>'
+            f'<td style="text-align:center;">{fc_sim_str}</td>'
+            f'<td style="text-align:center;color:#CC0000;font-weight:600;">{so_neg:.2f}</td>'
+            f'<td style="text-align:center;font-weight:700;">{fc_final_str}</td>'
+            f'</tr>'
+        )
         total_qty += qty
 
     return f"""<!DOCTYPE html>
