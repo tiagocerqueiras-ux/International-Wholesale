@@ -28,7 +28,16 @@ def _logo_b64() -> str:
     except Exception:
         return ""
 
-_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+_client = None  # lazy init — criado na primeira chamada que precise da API
+
+def _get_client() -> anthropic.Anthropic:
+    """Devolve o cliente Anthropic, criando-o na primeira chamada."""
+    global _client
+    if _client is None:
+        if not ANTHROPIC_API_KEY:
+            raise ValueError("ANTHROPIC_API_KEY não configurada. Adiciona-a nos Secrets do Streamlit Cloud.")
+        _client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    return _client
 
 # ── Texto obrigatório sobre VAT e transporte ──────────────────────────────────
 
@@ -337,7 +346,7 @@ Start with this EXACT branded header HTML:
 </div>
 """
 
-    response = _client.messages.create(
+    response = _get_client().messages.create(
         model=CLAUDE_MODEL,
         max_tokens=4096,
         messages=[{"role": "user", "content": prompt}]
@@ -502,7 +511,7 @@ INSTRUCTIONS:
 Return ONLY the HTML email body (no html/head/body tags).
 """
 
-    response = _client.messages.create(
+    response = _get_client().messages.create(
         model=CLAUDE_MODEL,
         max_tokens=800,
         messages=[{"role": "user", "content": prompt}]
