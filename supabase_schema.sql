@@ -39,6 +39,26 @@ CREATE INDEX IF NOT EXISTS idx_deals_deal_id   ON deals(deal_id);
 -- Cria o bucket manualmente no painel Supabase:
 -- Storage > New Bucket > Name: "sku-cache" > Public: OFF
 
--- ── Row Level Security (opcional para equipa) ───────────────────────────────
--- ALTER TABLE deals ENABLE ROW LEVEL SECURITY;
--- Por agora deixamos aberto com a anon key (acesso controlado pela app)
+-- ══════════════════════════════════════════════════════════════════════════════
+-- ROW LEVEL SECURITY (Camada 3 de segurança)
+-- Corre estas instruções no SQL Editor do Supabase (uma vez)
+-- ══════════════════════════════════════════════════════════════════════════════
+
+-- 1. Activar RLS na tabela deals
+ALTER TABLE deals ENABLE ROW LEVEL SECURITY;
+
+-- 2. Remover políticas antigas se existirem
+DROP POLICY IF EXISTS "app_full_access" ON deals;
+
+-- 3. Política: permite acesso total apenas à app (anon key via Streamlit)
+--    A service_role key bypassa o RLS automaticamente.
+--    O acesso directo à API sem a key correcta fica bloqueado.
+CREATE POLICY "app_full_access" ON deals
+  FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+-- Nota: com RLS activo, qualquer acesso directo ao Supabase sem
+-- a API key configurada nos Secrets da app retorna 0 linhas.
+-- Para revogar acesso completamente à anon key, apaga a policy acima
+-- e usa apenas a service_role key na app (SUPABASE_KEY = sb_secret_...).

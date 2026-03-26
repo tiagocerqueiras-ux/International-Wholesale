@@ -111,6 +111,55 @@ def email_approval_dialog():
             st.session_state.pop("pending_email", None)
             st.rerun()
 
+# ══════════════════════════════════════════════════════════════════════════════
+# SEGURANÇA — Password gate (Camada 2)
+# ══════════════════════════════════════════════════════════════════════════════
+def _check_auth() -> bool:
+    """Bloqueia o acesso à app até ser introduzida a password correcta.
+    Se APP_PASSWORD não estiver definida nos Secrets, não bloqueia (dev mode)."""
+    _pwd_secret = ""
+    try:
+        _pwd_secret = st.secrets.get("APP_PASSWORD", "")
+    except Exception:
+        pass
+    if not _pwd_secret:
+        return True  # sem password configurada — modo desenvolvimento
+
+    if st.session_state.get("_auth_ok"):
+        return True
+
+    # ── Ecrã de login ────────────────────────────────────────────────────────
+    st.markdown("""
+    <style>
+      [data-testid="stSidebar"] { display: none; }
+      .login-box { max-width: 380px; margin: 80px auto; padding: 40px 36px;
+                   border-radius: 10px; box-shadow: 0 4px 24px rgba(0,0,0,.10);
+                   background: #fff; text-align: center; }
+      .login-box h2 { color: #CC0000; font-size: 22px; margin-bottom: 4px; }
+      .login-box p  { color: #666; font-size: 13px; margin-bottom: 24px; }
+    </style>
+    <div class="login-box">
+      <h2>🔐 International Wholesale</h2>
+      <p>Acesso restrito à equipa Worten</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col = st.columns([1, 2, 1])[1]
+    with col:
+        pwd_input = st.text_input("Password", type="password",
+                                  placeholder="Introduz a password",
+                                  label_visibility="collapsed")
+        if st.button("Entrar →", use_container_width=True, type="primary"):
+            if pwd_input == _pwd_secret:
+                st.session_state["_auth_ok"] = True
+                st.rerun()
+            else:
+                st.error("Password incorrecta.")
+    return False
+
+if not _check_auth():
+    st.stop()
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## 📦 International Wholesale")
