@@ -649,3 +649,106 @@ def generate_closing_emails(deal: dict, departure_date: str, supplier_date: str 
     </body></html>"""
 
     return stocks_html, admin_html
+
+
+def generate_supplier_request(
+    skus_data: dict,
+    so_manual: dict,
+    vat_rate: float = 0.0,
+    ref: str = "",
+) -> str:
+    """
+    Gera um documento HTML de pedido de cotação/aprovação para o fornecedor.
+    Colunas: Qty / SKU / EAN / Produto / FC Simulador / SO Negoc. / FC Final
+    Sem Claude — gerado 100% em Python.
+    """
+    from datetime import datetime as _dt
+    now_str  = _dt.now().strftime("%d/%m/%Y %H:%M")
+    ref_line = f"Ref: {ref}" if ref else ""
+
+    logo_src = _logo_b64()
+    logo_tag = (f'<img src="{logo_src}" alt="Worten" style="max-height:48px;display:inline-block;">'
+                if logo_src else
+                '<span style="color:#fff;font-size:20px;font-weight:900;letter-spacing:-1px;">worten</span>')
+
+    rows_html = ""
+    total_qty = 0
+    for i, (sku, info) in enumerate(skus_data.items()):
+        d         = info.get("data") or {}
+        qty       = int(info.get("qty") or 1)
+        ean       = d.get("ean") or "—"
+        name      = (d.get("name") or sku)[:60]
+        brand     = d.get("brand") or ""
+        ufc_raw   = d.get("ufc_raw")
+        eis_total = d.get("eis_total") or 0.0
+        sell_out  = d.get("sell_out") or 0.0
+
+        if ufc_raw is not None:
+            fc_sim = round(ufc_raw + sell_out, 4) if vat_rate > 0 else round(ufc_raw - eis_total + sell_out, 4)
+        else:
+            fc_sim = info.get("fc_final")
+
+        so_neg   = float(so_manual.get(sku, info.get("so_neg", 0.0)))
+        fc_final = round(fc_sim - so_neg, 4) if fc_sim is not None else None
+
+        bg = "#f5f5f5" if i % 2 == 0 else "#ffffff"
+        rows_html += f"""
+        <tr style="background:{bg};">
+          <td style="text-align:center;">{qty}</td>
+          <td style="text-align:center;font-family:monospace;">{sku}</td>
+          <td style="text-align:center;">{ean}</td>
+          <td style="text-align:left;">{brand} {name}</td>
+          <td style="text-align:center;">{"—" if fc_sim is None else f"{fc_sim:.4f}"}</td>
+          <td style="text-align:center;color:#CC0000;font-weight:600;">{so_neg:.2f}</td>
+          <td style="text-align:center;font-weight:700;">{"—" if fc_final is None else f"{fc_final:.4f}"}</td>
+        </tr>"""
+        total_qty += qty
+
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+  * {{ font-family: Aptos, Calibri, 'Segoe UI', Arial, sans-serif; font-size: 13px; color: #333; }}
+  body {{ margin: 0; padding: 24px; background: #fff; }}
+  .header {{ background:#CC0000; padding:16px 24px; border-radius:6px 6px 0 0; margin-bottom:20px; display:flex; align-items:center; justify-content:space-between; }}
+  .header-right {{ color:#ffcccc; font-size:12px; text-align:right; line-height:1.6; }}
+  h2 {{ color:#CC0000; font-size:15px; text-transform:uppercase; letter-spacing:.5px; margin:0 0 16px; }}
+  table {{ width:100%; border-collapse:collapse; }}
+  th {{ background:#CC0000; color:#fff; padding:9px 12px; text-align:center; font-size:12px; text-transform:uppercase; letter-spacing:.3px; }}
+  th.lft {{ text-align:left; }}
+  td {{ padding:8px 12px; border-bottom:1px solid #eee; }}
+  .footer {{ margin-top:24px; padding-top:12px; border-top:1px solid #e0e0e0; font-size:11px; color:#999; text-align:right; }}
+  .note {{ background:#fff5f5; border-left:4px solid #CC0000; padding:10px 14px; margin:16px 0; font-size:12px; color:#555; border-radius:0 4px 4px 0; }}
+</style>
+</head>
+<body>
+<div class="header">
+  <div>{logo_tag}
+    <span style="color:#ffaaaa;font-size:13px;margin-left:14px;">International Wholesale</span>
+  </div>
+  <div class="header-right">
+    {ref_line}<br>Data: {now_str}<br>Total SKUs: {len(skus_data)} &nbsp;|&nbsp; Qty Total: {total_qty}
+  </div>
+</div>
+
+<h2>Pedido de Cotação / Aprovação — Fornecedor</h2>
+
+<div class="note">
+  Este documento destina-se a validação interna de custos e negociação de Apoio Sell-Out (SO) com o fornecedor antes da emissão de proposta ao cliente.
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Qty</th><th>SKU</th><th>EAN</th><th class="lft">Produto</th>
+      <th>FC Simulador</th><th>SO Negoc. (€)</th><th>FC Final</th>
+    </tr>
+  </thead>
+  <tbody>{rows_html}
+  </tbody>
+</table>
+
+<div class="footer">
+  Gerado por International Wholesale | Worten &nbsp;·&nbsp; {now_str}<br>
+  {USER_NAME} &nbsp;·&nbsp; {USER_EMAIL} &nbsp;·&nbsp; {USER_PHONE}
+</div>
+</body></html>"""

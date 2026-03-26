@@ -18,7 +18,7 @@ from config import (
 )
 from sku_lookup import lookup_skus, search_by_name, build_cache
 from deal_tracker import add_deal, update_status, update_margin, list_deals, get_deal, deal_products_table
-from email_generator import generate_proposal, generate_followup, save_email_html, generate_closing_emails
+from email_generator import generate_proposal, generate_followup, save_email_html, generate_closing_emails, generate_supplier_request
 from email_sender import create_draft, build_subject
 
 # ── Página ────────────────────────────────────────────────────────────────────
@@ -117,8 +117,8 @@ with st.sidebar:
     st.markdown("**Cotação Agent**")
     st.markdown("---")
     page = st.radio("Nav", ["🆕  Nova Cotação","📋  Deals em Curso",
-                             "🔍  Pesquisar Produto"],
-                    label_visibility="collapsed")
+                             "🏭  Pedido Fornecedor","🔍  Pesquisar Produto"],
+                    label_visibility="collapsed", key="nav")
     st.markdown("---")
     st.markdown("*Tiago Cerqueira*")
     st.markdown("*tdcerqueira@worten.pt*")
@@ -661,6 +661,159 @@ elif page == "📋  Deals em Curso":
                                 import traceback; st.code(traceback.format_exc())
 
     st.caption("💾 Dados guardados em Supabase")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PÁGINA 3 — PEDIDO FORNECEDOR
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "🏭  Pedido Fornecedor":
+    st.title("🏭 Pedido de Cotação / Aprovação — Fornecedor")
+    st.caption("Valida custos e negociação SO antes de emitir proposta ao cliente.")
+
+    if "sup_basket" not in st.session_state:
+        st.session_state["sup_basket"] = {}
+    if "sup_so_manual" not in st.session_state:
+        st.session_state["sup_so_manual"] = {}
+
+    idx = load_index()
+
+    # ── Pesquisa SKU ──────────────────────────────────────────────────────────
+    st.subheader("Adicionar Produtos")
+    s1, s2 = st.columns([2, 1])
+    with s1:
+        sup_search_mode = st.radio("Pesquisar por", ["SKU ID","EAN","Nome"], horizontal=True, key="sup_sm")
+    sup_col_a, sup_col_b = st.columns([3, 1])
+    with sup_col_a:
+        if sup_search_mode == "SKU ID":
+            sup_raw = st.text_input("SKU ID(s) — separa por vírgula ou espaço", key="sup_ids")
+        elif sup_search_mode == "EAN":
+            sup_raw = st.text_input("EAN(s) — separa por vírgula ou espaço", key="sup_ean")
+        else:
+            sup_raw = st.text_input("Nome do produto", key="sup_name")
+
+    btn_sup_add, btn_sup_clear = st.columns([2, 6])
+    if btn_sup_add.button("➕ Adicionar", key="sup_add"):
+        if sup_raw.strip():
+            if sup_search_mode == "Nome":
+                found = search_by_name(sup_raw.strip(), idx)
+            else:
+                ids = [x.strip() for x in sup_raw.replace(",", " ").split() if x.strip()]
+                found = lookup_skus(ids, idx)
+            if not found:
+                st.warning("Nenhum SKU encontrado.")
+            else:
+                for ref, d in found.items():
+                    sku_id = d.get("sku_id", ref)
+                    st.session_state["sup_basket"][sku_id] = d
+                    if sku_id not in st.session_state["sup_so_manual"]:
+                        st.session_state["sup_so_manual"][sku_id] = 0.0
+                st.rerun()
+    if btn_sup_clear.button("🗑️ Limpar", key="sup_clear"):
+        st.session_state["sup_basket"] = {}
+        st.session_state["sup_so_manual"] = {}
+        st.rerun()
+
+    # ── Tabela de produtos ────────────────────────────────────────────────────
+    sup_basket = st.session_state["sup_basket"]
+    if sup_basket:
+        st.markdown("---")
+        # Cabeçalho
+        sh = st.columns([0.5, 1.2, 1.5, 3.5, 1.6, 1.6, 1.6, 0.5])
+        for col, lbl in zip(sh, ["Qty","SKU","EAN","Produto","FC Simulador","SO Negoc. (€)","FC Final","✕"]):
+            col.caption(lbl)
+        st.markdown("---")
+
+        sup_qty_map = {}
+        for sku, d in list(sup_basket.items()):
+            ufc_raw   = d.get("ufc_raw")
+            eis_total = d.get("eis_total") or 0.0
+            sell_out  = d.get("sell_out") or 0.0
+            ean       = d.get("ean") or "—"
+            name      = f"{d.get('brand','')} · {d.get('name','')[:40]}"
+
+            sc = st.columns([0.5, 1.2, 1.5, 3.5, 1.6, 1.6, 1.6, 0.5])
+            sup_qty_map[sku] = sc[0].number_input("", min_value=1, value=1, step=1,
+                                                   key=f"sqty_{sku}", label_visibility="collapsed")
+            sc[1].markdown(f"**`{sku}`**")
+            sc[2].markdown(f"`{ean}`")
+            sc[3].markdown(name)
+
+            # FC Simulador (exportação por defeito)
+            if ufc_raw is not None:
+                fc_sim = round(ufc_raw - eis_total + sell_out, 4)
+                sc[4].markdown(f"**{fmt4(fc_sim)}**")
+            else:
+                fc_sim = None
+                sc[4].markdown("⚠️ N/D")
+
+            # SO negociação manual
+            so_neg = sc[5].number_input("", min_value=0.0,
+                                         value=st.session_state["sup_so_manual"].get(sku, 0.0),
+                                         step=0.5, format="%.2f", key=f"sso_{sku}",
+                                         label_visibility="collapsed",
+                                         help="Apoio Sell-Out a negociar com o fornecedor (€/un.)")
+            st.session_state["sup_so_manual"][sku] = so_neg
+
+            fc_final = round(fc_sim - so_neg, 4) if fc_sim is not None else None
+            sc[6].markdown(f"**{fmt4(fc_final)}**" if fc_final is not None else "—")
+
+            if sc[7].button("✕", key=f"srm_{sku}"):
+                del st.session_state["sup_basket"][sku]
+                st.session_state["sup_so_manual"].pop(sku, None)
+                st.rerun()
+
+        # Actualizar qtds no basket
+        for sku in sup_basket:
+            if sku in sup_qty_map:
+                st.session_state["sup_basket"][sku]["_qty_override"] = sup_qty_map[sku]
+
+        st.markdown("---")
+        # ── Acções ───────────────────────────────────────────────────────────
+        act1, act2 = st.columns(2)
+
+        if act1.button("📄 Gerar Pedido ao Fornecedor", type="primary", use_container_width=True):
+            _sup_skus_with_qty = {}
+            for sku, d in sup_basket.items():
+                _sup_skus_with_qty[sku] = {
+                    "qty": sup_qty_map.get(sku, 1),
+                    "data": d,
+                    "so_neg": st.session_state["sup_so_manual"].get(sku, 0.0),
+                }
+            _html = generate_supplier_request(
+                skus_data=_sup_skus_with_qty,
+                so_manual=st.session_state["sup_so_manual"],
+                vat_rate=0.0,
+            )
+            st.session_state["sup_request_html"] = _html
+            st.rerun()
+
+        if act2.button("➡️ Usar para Nova Cotação Cliente", use_container_width=True,
+                       help="Copia estes produtos e SOs para a Nova Cotação"):
+            # Copiar basket e SO para a Nova Cotação
+            _new_basket = {}
+            _new_so = {}
+            for sku, d in sup_basket.items():
+                _d = dict(d)
+                _new_basket[sku] = _d
+                _new_so[sku] = st.session_state["sup_so_manual"].get(sku, 0.0)
+            st.session_state["product_basket"] = _new_basket
+            st.session_state["so_manual"]       = _new_so
+            st.session_state["nav"]             = "🆕  Nova Cotação"
+            st.rerun()
+
+        # Pré-visualização do pedido gerado
+        if "sup_request_html" in st.session_state:
+            st.subheader("📄 Pedido Gerado")
+            st.components.v1.html(st.session_state["sup_request_html"], height=520, scrolling=True)
+            st.download_button(
+                "⬇️ Descarregar HTML",
+                data=st.session_state["sup_request_html"],
+                file_name="pedido_fornecedor.html",
+                mime="text/html",
+                use_container_width=True,
+            )
+    else:
+        st.info("Adiciona produtos para criar o pedido ao fornecedor.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
