@@ -525,6 +525,56 @@ elif page == "📋  Deals em Curso":
                     st.success(f"✅ {did} → {new_st}")
                     st.rerun()
 
+                # ── Reenviar Proposta ──────────────────────────────────────
+                st.markdown("---")
+                st.markdown("**📧 Enviar Proposta**")
+                rp1, rp2 = st.columns([4, 1])
+                resend_to = rp1.text_input(
+                    "Email(s) destinatário(s)",
+                    value=str(deal.get("Email Cliente", "")),
+                    key=f"rto_{did}",
+                    help="Separa vários emails com ;",
+                )
+                rp2.markdown("<br>", unsafe_allow_html=True)
+                if rp2.button("🚀 Gerar & Enviar", key=f"rsend_{did}", type="primary",
+                               use_container_width=True):
+                    _skus = deal.get("_skus_detail") or {}
+                    if not _skus:
+                        st.warning("Sem dados de produtos para regenerar a proposta.")
+                    else:
+                        _vat_str  = str(deal.get("IVA", ""))
+                        _vat_rate = 0.23 if "23" in _vat_str else 0.0
+                        _freight  = float(deal.get("Frete (€)") or 0)
+                        with st.spinner("A gerar proposta com Claude AI..."):
+                            try:
+                                html_body, pvp_calc, margin_calc = generate_proposal(
+                                    client_name=str(deal.get("Cliente", "")),
+                                    client_email=resend_to,
+                                    country=str(deal.get("País", "")),
+                                    language=str(deal.get("Língua", "EN")),
+                                    skus_data=_skus,
+                                    deal_id=did,
+                                    notes=str(deal.get("Notas", "")),
+                                    incoterm=str(deal.get("Incoterm", "")),
+                                    payment_conditions=str(deal.get("Pagamento", "")),
+                                    freight_cost=_freight,
+                                    vat_rate=_vat_rate,
+                                    availability=str(deal.get("Availability / ETA", "Ex-stock")),
+                                )
+                                st.session_state["pending_email"] = {
+                                    "html_body":   html_body,
+                                    "deal_id":     did,
+                                    "pvp_total":   pvp_calc,
+                                    "margin_calc": margin_calc,
+                                    "client_email": resend_to,
+                                    "client_name": str(deal.get("Cliente", "")),
+                                    "language":    str(deal.get("Língua", "EN")),
+                                }
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao gerar proposta: {e}")
+                                import traceback; st.code(traceback.format_exc())
+
                 # ── Follow-up (só se deal enviado/em negociação) ───────────
                 if status in ("Enviado", "Em Negociação", "Follow-up", "Rascunho"):
                     st.markdown("**Follow-up**")
