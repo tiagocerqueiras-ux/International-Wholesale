@@ -1,13 +1,11 @@
 """
-Email Sender — Envio via Resend API
+Email Sender — Envio via Resend SDK
 =====================================
-Usa a API HTTP do Resend para enviar emails.
+Usa o SDK oficial do Resend para enviar emails.
 Compatível com Railway e outros ambientes cloud (sem restrições SMTP).
 """
 
-import urllib.request
-import urllib.error
-import json
+import resend
 
 from config import RESEND_API_KEY, SENDER_EMAIL, USER_EMAIL, COMPANY_NAME
 
@@ -20,7 +18,7 @@ def send_email(
     cc: list = None,
 ) -> tuple[bool, str]:
     """
-    Envia email HTML via Resend API.
+    Envia email HTML via Resend SDK.
 
     Returns:
         (True, "") em caso de sucesso
@@ -33,42 +31,26 @@ def send_email(
     if not recipients:
         return False, "Nenhum endereço de email válido."
 
-    payload = {
+    resend.api_key = RESEND_API_KEY
+
+    params: resend.Emails.SendParams = {
         "from": f"Tiago Cerqueira <{SENDER_EMAIL}>",
         "to":   recipients,
         "subject": subject,
         "html": html_body,
-        "text": "Por favor consulte a versão HTML deste email.",
         "reply_to": reply_to or USER_EMAIL,
     }
     if cc:
-        payload["cc"] = cc
+        params["cc"] = cc
 
     try:
-        data = json.dumps(payload).encode("utf-8")
-        req  = urllib.request.Request(
-            "https://api.resend.com/emails",
-            data=data,
-            headers={
-                "Authorization": f"Bearer {RESEND_API_KEY}",
-                "Content-Type":  "application/json",
-                "User-Agent":    "BoxMovers/1.0",
-                "Accept":        "application/json",
-            },
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            if resp.status in (200, 201):
-                return True, ""
-            body = resp.read().decode("utf-8")
-            return False, f"Resend HTTP {resp.status}: {body}"
-
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8")
-        # Mostra status HTTP e corpo completo para debug
-        return False, f"HTTP {e.code} | key={RESEND_API_KEY[:8]} | {body[:300]}"
+        result = resend.Emails.send(params)
+        # SDK retorna dict com "id" em caso de sucesso
+        if result and result.get("id"):
+            return True, ""
+        return False, f"Resend: resposta inesperada: {result}"
     except Exception as e:
-        return False, f"Erro: {e}"
+        return False, f"Resend erro: {e}"
 
 
 # Alias para compatibilidade com chamadas create_draft em app.py
