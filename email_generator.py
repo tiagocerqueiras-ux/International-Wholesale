@@ -302,12 +302,6 @@ Note: "PVP PT (ref.)" is Portuguese retail price (market reference only). "Unit 
 SUPPORT / EIS NOTES (use as footnotes below table if not "none"):
 {support_notes}
 
-COMMERCIAL CONDITIONS (MANDATORY — must appear in the email):
-  Incoterm: {effective_incoterm}
-  Warehouse: {WAREHOUSE}
-  Payment Conditions: {effective_payment}
-  Availability / ETA: {availability or "Ex-stock"}
-
 FINANCIAL SUMMARY (show exactly these values):
   Products subtotal : {subtotal:.2f} EUR
   Freight / Transport: {freight_str}
@@ -323,8 +317,9 @@ INSTRUCTIONS:
 3. Render the products table with ALL {n_skus} rows — do NOT skip, merge, or omit any product. Use the exact data from PRODUCTS TABLE DATA above.
 4. After the table add the SUPPORT/EIS footnotes (if any).
 5. Show the financial summary as a right-aligned summary block using class="summary-table". Bold the TOTAL line.
-6. End your output immediately after the financial summary block (after closing the summary-table div). Do NOT add any note-box, conditions section, closing salutation, signature, or any other content after the financial summary.
-7. Do NOT mention stock levels or warehouse quantities anywhere.
+6. After the closing </div> of the summary-table, output EXACTLY this HTML comment and nothing else: <!-- END -->
+   Do NOT add conditions, salutation, signature, note-box, warehouse info, payment info, or ANY other content after <!-- END -->.
+7. Do NOT mention stock levels, warehouse addresses, payment conditions, incoterms, or availability anywhere — these are added separately.
 8. Be professional, concise, B2B focused.
 
 CRITICAL FORMATTING RULES — DO NOT DEVIATE UNDER ANY CIRCUMSTANCES:
@@ -381,26 +376,14 @@ Start with this EXACT branded header HTML:
         '', html_body, flags=_re.IGNORECASE
     )
 
-    # 5. Fechar quaisquer <div> que o Claude deixou em aberto
-    #    (divs em aberto fazem os blocos seguintes ficarem dentro deles)
+    # 5. Cortar tudo após o sentinel <!-- END --> (inclui condições, assinatura, etc.)
+    if '<!-- END -->' in html_body:
+        html_body = html_body.split('<!-- END -->')[0]
+
+    # 6. Fechar quaisquer <div> que o Claude deixou em aberto
     open_divs = len(_re.findall(r'<div\b[^>]*>', html_body)) - html_body.count('</div>')
     if open_divs > 0:
         html_body = html_body.rstrip() + ('</div>' * open_divs)
-
-    # 6. Remover qualquer bloco de condições gerado pelo Claude (tabelas, divs)
-    html_body = _re.sub(
-        r'<div[^>]*class=["\'](?:note-box|conditions)["\'][^>]*>.*?</div>',
-        '', html_body, flags=_re.DOTALL | _re.IGNORECASE
-    )
-    # Remover tabelas com header de condições que Claude ainda possa gerar
-    html_body = _re.sub(
-        r'<table[^>]*>(?:(?!<table).)*?(?:incoterm|warehouse|payment\s+conditions)(?:(?!<table).)*?</table>',
-        '', html_body, flags=_re.DOTALL | _re.IGNORECASE
-    )
-    # Re-fechar divs após limpeza
-    open_divs2 = len(_re.findall(r'<div\b[^>]*>', html_body)) - html_body.count('</div>')
-    if open_divs2 > 0:
-        html_body = html_body.rstrip() + ('</div>' * open_divs2)
 
     # 7. Blocos Python gerados com inline styles (imunes a herança de CSS pai)
     closing_lang = {
