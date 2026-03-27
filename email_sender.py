@@ -63,8 +63,8 @@ def send_email(
 
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8")
-        # Mostra o corpo completo para debug
-        return False, f"Resend erro (key={RESEND_API_KEY[:8]}...): {body}"
+        # Mostra status HTTP e corpo completo para debug
+        return False, f"HTTP {e.code} | key={RESEND_API_KEY[:8]} | {body[:300]}"
     except Exception as e:
         return False, f"Erro: {e}"
 
