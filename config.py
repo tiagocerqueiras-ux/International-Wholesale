@@ -61,11 +61,9 @@ CLAUDE_MODEL      = "claude-sonnet-4-6"
 SUPABASE_URL = _get_secret("SUPABASE_URL")
 SUPABASE_KEY = _get_secret("SUPABASE_KEY")
 
-# ── Email SMTP ─────────────────────────────────────────────────────────────────
-SMTP_EMAIL    = _get_secret("SMTP_EMAIL",    "tiago.cerqueira@transglobalchain.com")
-SMTP_PASSWORD = _get_secret("SMTP_PASSWORD", "")
-SMTP_HOST     = _get_secret("SMTP_HOST",     "smtp.gmail.com")
-SMTP_PORT     = int(_get_secret("SMTP_PORT", "587"))
+# ── Email (Resend API) ─────────────────────────────────────────────────────────
+RESEND_API_KEY  = _get_secret("RESEND_API_KEY", "")
+SENDER_EMAIL    = _get_secret("SMTP_EMAIL", "tiago.cerqueira@transglobalchain.com")
 
 # Emails internos para alertas de fecho de deal
 STOCKS_EMAIL = _get_secret("STOCKS_EMAIL", "")

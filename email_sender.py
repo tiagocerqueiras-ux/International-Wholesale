@@ -1,15 +1,15 @@
 """
-Email Sender — Envio via SMTP (Gmail / Google Workspace)
-=========================================================
-Substitui outlook_sender.py para ambientes cloud.
-Compatível com Gmail App Passwords e Google Workspace.
+Email Sender — Envio via Resend API
+=====================================
+Usa a API HTTP do Resend para enviar emails.
+Compatível com Railway e outros ambientes cloud (sem restrições SMTP).
 """
 
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+import urllib.request
+import urllib.error
+import json
 
-from config import SMTP_EMAIL, SMTP_PASSWORD, SMTP_HOST, SMTP_PORT, USER_EMAIL
+from config import RESEND_API_KEY, SENDER_EMAIL, USER_EMAIL, COMPANY_NAME
 
 
 def send_email(
@@ -20,62 +20,60 @@ def send_email(
     cc: list = None,
 ) -> tuple[bool, str]:
     """
-    Envia email HTML via SMTP.
+    Envia email HTML via Resend API.
 
     Returns:
         (True, "") em caso de sucesso
         (False, mensagem_erro) em caso de erro
     """
-    if not SMTP_PASSWORD:
-        return False, "SMTP_PASSWORD não configurado. Verifica os secrets."
+    if not RESEND_API_KEY:
+        return False, "RESEND_API_KEY não configurado. Adiciona-a nas variáveis do Railway."
 
-    # Suporta múltiplos destinatários separados por ";"
     recipients = [r.strip() for r in to.split(";") if r.strip()]
     if not recipients:
         return False, "Nenhum endereço de email válido."
 
+    payload = {
+        "from": f"International Wholesale | Worten <{SENDER_EMAIL}>",
+        "to":   recipients,
+        "subject": subject,
+        "html": html_body,
+        "text": "Por favor consulte a versão HTML deste email.",
+        "reply_to": reply_to or USER_EMAIL,
+    }
+    if cc:
+        payload["cc"] = cc
+
     try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"]    = f"International Wholesale | Worten <{SMTP_EMAIL}>"
-        msg["To"]      = ", ".join(recipients)
-        msg["Reply-To"] = reply_to or USER_EMAIL
-        if cc:
-            msg["Cc"] = ", ".join(cc)
-            recipients += cc
-
-        # Versão plain text mínima (fallback)
-        plain = "Por favor consulte a versão HTML deste email."
-        msg.attach(MIMEText(plain, "plain", "utf-8"))
-        msg.attach(MIMEText(html_body, "html",  "utf-8"))
-
-        # Gmail App Passwords funcionam com ou sem espaços — normalizar
-        _pwd = SMTP_PASSWORD.replace(" ", "")
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(SMTP_EMAIL, _pwd)
-            server.sendmail(SMTP_EMAIL, recipients, msg.as_string())
-
-        return True, ""
-
-    except smtplib.SMTPAuthenticationError:
-        return False, (
-            "Erro de autenticação SMTP. "
-            "Confirma o App Password em myaccount.google.com/security."
+        data = json.dumps(payload).encode("utf-8")
+        req  = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data=data,
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type":  "application/json",
+            },
+            method="POST",
         )
-    except smtplib.SMTPException as e:
-        return False, f"Erro SMTP: {e}"
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if resp.status in (200, 201):
+                return True, ""
+            body = resp.read().decode("utf-8")
+            return False, f"Resend HTTP {resp.status}: {body}"
+
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8")
+        try:
+            msg = json.loads(body).get("message", body)
+        except Exception:
+            msg = body
+        return False, f"Resend erro: {msg}"
     except Exception as e:
         return False, f"Erro: {e}"
 
 
-# Alias para retrocompatibilidade com chamadas create_draft em app.py
+# Alias para compatibilidade com chamadas create_draft em app.py
 def create_draft(to: str, subject: str, html_body: str, send: bool = False) -> tuple[bool, str]:
-    """
-    Wrapper de compatibilidade: na versão cloud envia sempre (não há rascunhos Outlook).
-    O parâmetro send é ignorado — o email é sempre enviado via SMTP.
-    """
     return send_email(to=to, subject=subject, html_body=html_body)
 
 
