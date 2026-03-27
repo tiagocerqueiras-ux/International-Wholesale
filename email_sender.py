@@ -34,7 +34,7 @@ def send_email(
         return False, "Nenhum endereço de email válido."
 
     payload = {
-        "from": f"International Wholesale | Worten <{SENDER_EMAIL}>",
+        "from": f"Tiago Cerqueira <{SENDER_EMAIL}>",
         "to":   recipients,
         "subject": subject,
         "html": html_body,
@@ -63,11 +63,8 @@ def send_email(
 
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8")
-        try:
-            msg = json.loads(body).get("message", body)
-        except Exception:
-            msg = body
-        return False, f"Resend erro: {msg}"
+        # Mostra o corpo completo para debug
+        return False, f"Resend erro (key={RESEND_API_KEY[:8]}...): {body}"
     except Exception as e:
         return False, f"Erro: {e}"
 
