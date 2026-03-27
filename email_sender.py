@@ -52,6 +52,8 @@ def send_email(
             headers={
                 "Authorization": f"Bearer {RESEND_API_KEY}",
                 "Content-Type":  "application/json",
+                "User-Agent":    "BoxMovers/1.0",
+                "Accept":        "application/json",
             },
             method="POST",
         )
