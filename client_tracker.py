@@ -300,3 +300,245 @@ def bulk_import_clients(rows: list[dict]) -> tuple[int, int, int]:
             print(f"[client_tracker] bulk_import erro: {e}")
             err += 1
     return created, updated, err
+
+
+# ── Tabelas de referência ──────────────────────────────────────────────────────
+
+_EU_COUNTRIES = {
+    "Portugal","Spain","France","Germany","Italy","Netherlands","Belgium",
+    "Poland","Romania","Bulgaria","Czech Republic","Slovakia","Hungary",
+    "Croatia","Slovenia","Greece","Austria","Sweden","Denmark","Finland",
+    "Ireland","Luxembourg","Malta","Cyprus","Estonia","Latvia","Lithuania",
+}
+_AFRICA_COUNTRIES = {
+    "Morocco","Algeria","Tunisia","Libya","Egypt","Angola","Mozambique",
+    "Nigeria","Kenya","South Africa","Ghana","Senegal","Ivory Coast",
+    "Cameroon","Tanzania","Uganda","Ethiopia","Sudan","Cape Verde",
+    "Cabo Verde","Madagascar","Rwanda","Zambia","Zimbabwe","Botswana",
+}
+_MIDDLE_EAST = {
+    "UAE","Saudi Arabia","Qatar","Kuwait","Bahrain","Oman","Jordan",
+    "Lebanon","Israel","Turkey","Iraq","Iran","Palestine","Yemen",
+}
+
+COUNTRY_PHONE_CODES: dict[str, str] = {
+    "Portugal": "+351", "Spain": "+34", "France": "+33", "Germany": "+49",
+    "Italy": "+39", "Netherlands": "+31", "Belgium": "+32", "Poland": "+48",
+    "Romania": "+40", "Bulgaria": "+359", "Czech Republic": "+420",
+    "Slovakia": "+421", "Hungary": "+36", "Croatia": "+385",
+    "Slovenia": "+386", "Greece": "+30", "Austria": "+43", "Sweden": "+46",
+    "Denmark": "+45", "Finland": "+358", "Norway": "+47", "Switzerland": "+41",
+    "United Kingdom": "+44", "UK": "+44", "Ireland": "+353",
+    "Estonia": "+372", "Latvia": "+371", "Lithuania": "+370",
+    "Luxembourg": "+352", "Malta": "+356", "Cyprus": "+357",
+    "Morocco": "+212", "Algeria": "+213", "Tunisia": "+216",
+    "Angola": "+244", "Mozambique": "+258", "Nigeria": "+234",
+    "Kenya": "+254", "South Africa": "+27", "Ghana": "+233",
+    "Senegal": "+221", "Cape Verde": "+238", "Cabo Verde": "+238",
+    "UAE": "+971", "Saudi Arabia": "+966", "Qatar": "+974",
+    "Kuwait": "+965", "Israel": "+972", "Turkey": "+90",
+    "Russia": "+7", "Ukraine": "+380", "Serbia": "+381",
+    "Albania": "+355", "Bosnia": "+387", "North Macedonia": "+389",
+    "Montenegro": "+382", "Kosovo": "+383",
+}
+
+
+# ── Qualidade de Dados ─────────────────────────────────────────────────────────
+
+def data_quality_report() -> dict:
+    """
+    Analisa a qualidade dos dados e devolve um relatório com:
+    - email_domain_issues: empresas com contactos de domínios diferentes
+    - phone_issues:        telefones sem indicativo de país
+    - duplicates:          grupos de empresas com nomes similares
+    - missing_fields:      registos com campos importantes em falta
+    """
+    from collections import defaultdict
+    from difflib import SequenceMatcher
+
+    clients = _get_client().table("clients").select("*").execute().data or []
+
+    # 1. Domínios de email por empresa
+    company_emails: dict[str, list] = defaultdict(list)
+    for c in clients:
+        cn = (c.get("company_name") or "").strip()
+        em = (c.get("contact_email") or "").strip()
+        if cn and em and "@" in em:
+            domain = em.split("@", 1)[1].lower()
+            company_emails[cn].append({"id": c["id"], "email": em, "domain": domain})
+
+    email_issues = []
+    for company, entries in company_emails.items():
+        domains = {e["domain"] for e in entries}
+        if len(domains) > 1:
+            email_issues.append({"company": company, "entries": entries,
+                                  "domains": sorted(domains)})
+
+    # 2. Telefones sem indicativo (+)
+    phone_issues = []
+    for c in clients:
+        phone = (c.get("contact_phone") or "").strip()
+        if phone and not phone.startswith("+"):
+            country = c.get("country", "")
+            suggested = COUNTRY_PHONE_CODES.get(country, "")
+            phone_issues.append({
+                "id":        c["id"],
+                "company":   c.get("company_name", "—"),
+                "contact":   c.get("contact_name", "—"),
+                "phone":     phone,
+                "country":   country,
+                "suggested": suggested,
+            })
+
+    # 3. Empresas duplicadas (SequenceMatcher > 0.82)
+    name_index = [(c["id"], (c.get("company_name") or "").strip().lower())
+                  for c in clients if c.get("company_name")]
+    checked, dup_groups = set(), []
+    for i, (id1, n1) in enumerate(name_index):
+        if id1 in checked or not n1:
+            continue
+        group_ids = [id1]
+        for j, (id2, n2) in enumerate(name_index):
+            if i >= j or id2 in checked or not n2:
+                continue
+            if SequenceMatcher(None, n1, n2).ratio() > 0.82:
+                group_ids.append(id2)
+        if len(group_ids) > 1:
+            for gid in group_ids:
+                checked.add(gid)
+            dup_groups.append([c for c in clients if c["id"] in group_ids])
+
+    # 4. Campos importantes em falta
+    important = ["company_name", "country", "contact_email", "contact_phone",
+                 "client_type", "market"]
+    missing_fields = []
+    for c in clients:
+        missing = [f for f in important if not c.get(f)]
+        if missing:
+            missing_fields.append({
+                "id":      c["id"],
+                "company": c.get("company_name", "—"),
+                "missing": missing,
+            })
+
+    return {
+        "email_domain_issues": email_issues,
+        "phone_issues":        phone_issues,
+        "duplicates":          dup_groups,
+        "missing_fields":      missing_fields,
+        "total_clients":       len(clients),
+    }
+
+
+def fix_phone_add_code(client_id: str, phone: str, country: str) -> bool:
+    """Adiciona o indicativo do país ao número de telefone se ainda não tiver."""
+    code = COUNTRY_PHONE_CODES.get(country, "")
+    if not code or phone.startswith("+"):
+        return False
+    clean = phone.lstrip("0").strip()
+    new_phone = f"{code} {clean}"
+    return update_client(client_id, {"contact_phone": new_phone})
+
+
+def fix_all_phones() -> tuple[int, int]:
+    """Aplica indicativo de país em todos os telefones que não o têm. Devolve (fixed, skipped)."""
+    clients = _get_client().table("clients").select(
+        "id,contact_phone,country").execute().data or []
+    fixed = skipped = 0
+    for c in clients:
+        phone   = (c.get("contact_phone") or "").strip()
+        country = c.get("country", "")
+        if phone and not phone.startswith("+"):
+            if fix_phone_add_code(str(c["id"]), phone, country):
+                fixed += 1
+            else:
+                skipped += 1
+    return fixed, skipped
+
+
+def merge_clients(primary_id: str, secondary_id: str) -> bool:
+    """
+    Faz merge de dois registos de clientes.
+    O registo primary é enriquecido com campos em falta do secondary.
+    O secondary é apagado.
+    """
+    primary   = get_client(primary_id)
+    secondary = get_client(secondary_id)
+    if not primary or not secondary:
+        return False
+
+    patch: dict = {}
+    # Preencher campos em falta no primary com dados do secondary
+    for field in ["legal_name","vat","address","zip_code","city","region",
+                  "contact_name","contact_role","contact_email","contact_phone",
+                  "contact_linkedin","incoterm","payment_terms","currency",
+                  "market","client_type","status"]:
+        if not primary.get(field) and secondary.get(field):
+            patch[field] = secondary[field]
+
+    # Concatenar notas
+    p_notes = (primary.get("notes") or "").strip()
+    s_notes = (secondary.get("notes") or "").strip()
+    if s_notes and s_notes not in p_notes:
+        patch["notes"] = f"{p_notes} | {s_notes}".strip(" |")
+
+    # União de brands e categories
+    merged_brands = list({*(primary.get("brands") or []),
+                           *(secondary.get("brands") or [])})
+    merged_cats   = list({*(primary.get("categories") or []),
+                           *(secondary.get("categories") or [])})
+    if set(merged_brands) != set(primary.get("brands") or []):
+        patch["brands"] = merged_brands
+    if set(merged_cats) != set(primary.get("categories") or []):
+        patch["categories"] = merged_cats
+
+    if patch:
+        update_client(primary_id, patch)
+
+    try:
+        _get_client().table("clients").delete().eq("id", secondary_id).execute()
+        return True
+    except Exception as e:
+        print(f"[client_tracker] merge_clients erro: {e}")
+        return False
+
+
+def auto_enrich_clients() -> dict:
+    """
+    Enriquece automaticamente campos deriváveis:
+    - market a partir do country
+    - currency default EUR
+    Devolve {"updated": int, "unchanged": int}.
+    """
+    clients = _get_client().table("clients").select("*").execute().data or []
+    updated = unchanged = 0
+    for c in clients:
+        patch: dict = {}
+        country = (c.get("country") or "").strip()
+
+        # market a partir do country
+        if country and not c.get("market"):
+            if country in _EU_COUNTRIES:
+                patch["market"] = "EU"
+            elif country in _AFRICA_COUNTRIES:
+                patch["market"] = "África"
+            elif country in _MIDDLE_EAST:
+                patch["market"] = "Médio Oriente"
+            else:
+                patch["market"] = "Outros"
+
+        # currency default
+        if not c.get("currency"):
+            patch["currency"] = "EUR"
+
+        # client_type default
+        if not c.get("client_type"):
+            patch["client_type"] = "Distribuidor"
+
+        if patch:
+            update_client(str(c["id"]), patch)
+            updated += 1
+        else:
+            unchanged += 1
+
+    return {"updated": updated, "unchanged": unchanged}

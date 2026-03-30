@@ -24,6 +24,8 @@ from client_tracker import (
     add_client, update_client, get_client, get_client_by_email,
     list_clients, count_clients, get_client_deals, bulk_import_clients,
     find_duplicates, upsert_from_deal, sync_clients_from_deals,
+    data_quality_report, fix_phone_add_code, fix_all_phones,
+    merge_clients, auto_enrich_clients, COUNTRY_PHONE_CODES,
     CLIENT_STATUSES, CLIENT_TYPES, MARKETS, BRANDS_LIST, CATEGORIES_LIST,
 )
 from auth_manager import (
@@ -1235,7 +1237,9 @@ elif page == "👥  CRM — Clientes":
     st.title("👥 CRM — Clientes B2B")
 
     # ── Tabs principais ───────────────────────────────────────────────────────
-    tab_list, tab_new, tab_import = st.tabs(["📋 Lista de Clientes", "➕ Novo Cliente", "📥 Importar"])
+    tab_list, tab_new, tab_import, tab_quality = st.tabs([
+        "📋 Lista de Clientes", "➕ Novo Cliente", "📥 Importar", "🔍 Qualidade de Dados"
+    ])
 
     # ════════════════════════════════════════════════════════════════════════
     # TAB 1 — LISTA
@@ -1528,6 +1532,125 @@ elif page == "👥  CRM — Clientes":
 
         st.markdown("---")
         st.caption(f"Total de clientes na base de dados: **{count_clients()}**")
+
+    # ════════════════════════════════════════════════════════════════════════
+    # TAB 4 — QUALIDADE DE DADOS
+    # ════════════════════════════════════════════════════════════════════════
+    with tab_quality:
+        st.subheader("🔍 Qualidade de Dados — CRM")
+        st.markdown("Análise e correcção automática da BD de clientes.")
+
+        qa1, qa2 = st.columns(2)
+        if qa1.button("🔎 Analisar BD", type="primary", key="btn_qa_scan"):
+            st.session_state["qa_report"] = data_quality_report()
+        if qa2.button("✨ Auto-Enriquecer (market / currency / tipo)", key="btn_qa_enrich"):
+            with st.spinner("A enriquecer..."):
+                _res = auto_enrich_clients()
+            st.success(f"✅ {_res['updated']} registos actualizados · {_res['unchanged']} sem alterações.")
+            st.rerun()
+
+        _qa = st.session_state.get("qa_report")
+        if not _qa:
+            st.info("Clica em **Analisar BD** para gerar o relatório.")
+        else:
+            _tot = _qa["total_clients"]
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Total Clientes", _tot)
+            m2.metric("⚠️ Email/Domínio", len(_qa["email_domain_issues"]))
+            m3.metric("📞 Telefone s/ indicativo", len(_qa["phone_issues"]))
+            m4.metric("🔁 Possíveis duplicados", len(_qa["duplicates"]))
+            st.divider()
+
+            # ── 1. Problemas de domínio de email ─────────────────────────
+            with st.expander(f"📧 Domínios de email inconsistentes ({len(_qa['email_domain_issues'])} empresa(s))",
+                             expanded=len(_qa["email_domain_issues"]) > 0):
+                if not _qa["email_domain_issues"]:
+                    st.success("✅ Todos os emails por empresa têm domínio consistente.")
+                else:
+                    for issue in _qa["email_domain_issues"]:
+                        st.warning(f"**{issue['company']}** — domínios: {', '.join(issue['domains'])}")
+                        for e in issue["entries"]:
+                            st.caption(f"  → `{e['email']}` (ID {e['id']})")
+
+            # ── 2. Telefones sem indicativo ───────────────────────────────
+            with st.expander(f"📞 Telefones sem indicativo de país ({len(_qa['phone_issues'])})",
+                             expanded=len(_qa["phone_issues"]) > 0):
+                if not _qa["phone_issues"]:
+                    st.success("✅ Todos os telefones têm indicativo de país.")
+                else:
+                    if st.button("⚡ Corrigir todos automaticamente", key="btn_fix_all_phones"):
+                        with st.spinner("A corrigir telefones..."):
+                            _fixed, _skip = fix_all_phones()
+                        st.success(f"✅ {_fixed} telefones corrigidos · {_skip} sem código de país disponível.")
+                        st.session_state.pop("qa_report", None)
+                        st.rerun()
+
+                    for p in _qa["phone_issues"]:
+                        _code_sug = p.get("suggested", "")
+                        _label = (f"**{p['company']}** · {p['contact']} · `{p['phone']}` "
+                                  f"· {p['country']}"
+                                  + (f" → sugerido: **{_code_sug}**" if _code_sug else " (país sem código mapeado)"))
+                        pc1, pc2 = st.columns([5, 1])
+                        pc1.markdown(_label)
+                        if _code_sug and pc2.button("✔️ Corrigir", key=f"fixph_{p['id']}"):
+                            fix_phone_add_code(str(p["id"]), p["phone"], p["country"])
+                            st.session_state.pop("qa_report", None)
+                            st.rerun()
+
+            # ── 3. Empresas duplicadas ────────────────────────────────────
+            with st.expander(f"🔁 Possíveis empresas duplicadas ({len(_qa['duplicates'])} grupo(s))",
+                             expanded=len(_qa["duplicates"]) > 0):
+                if not _qa["duplicates"]:
+                    st.success("✅ Sem duplicados detectados.")
+                else:
+                    for grp in _qa["duplicates"]:
+                        names = " / ".join(c.get("company_name","—") for c in grp)
+                        st.warning(f"Grupo similar: **{names}**")
+                        _g_cols = st.columns(len(grp))
+                        for gi, (gc, gcol) in enumerate(zip(grp, _g_cols)):
+                            gcol.markdown(
+                                f"**{gc.get('company_name','—')}**  \n"
+                                f"{gc.get('contact_name','—')}  \n"
+                                f"`{gc.get('contact_email','—')}`  \n"
+                                f"{gc.get('country','—')} · {gc.get('status','—')}"
+                            )
+                        # Merge: escolher primary/secondary
+                        ids    = [str(c["id"]) for c in grp]
+                        labels = [c.get("company_name","—") for c in grp]
+                        mg1, mg2, mg3 = st.columns([2, 2, 1])
+                        _prim = mg1.selectbox("Manter (primary)", options=ids,
+                                              format_func=lambda x: labels[ids.index(x)],
+                                              key=f"mg_prim_{ids[0]}")
+                        _sec  = mg2.selectbox("Apagar (secondary)", options=ids,
+                                              format_func=lambda x: labels[ids.index(x)],
+                                              key=f"mg_sec_{ids[0]}",
+                                              index=1 if len(ids) > 1 else 0)
+                        if mg3.button("🔀 Fazer Merge", key=f"mg_btn_{ids[0]}"):
+                            if _prim == _sec:
+                                st.error("Primary e secondary têm de ser diferentes.")
+                            else:
+                                ok = merge_clients(_prim, _sec)
+                                if ok:
+                                    st.success("✅ Merge concluído.")
+                                    st.session_state.pop("qa_report", None)
+                                    st.rerun()
+                                else:
+                                    st.error("Erro no merge.")
+                        st.divider()
+
+            # ── 4. Campos em falta ────────────────────────────────────────
+            with st.expander(f"📋 Registos com campos importantes em falta ({len(_qa['missing_fields'])})",
+                             expanded=False):
+                if not _qa["missing_fields"]:
+                    st.success("✅ Sem campos obrigatórios em falta.")
+                else:
+                    import pandas as _pd_qa
+                    _mf_df = _pd_qa.DataFrame([
+                        {"Empresa": r["company"], "Campos em Falta": ", ".join(r["missing"])}
+                        for r in _qa["missing_fields"]
+                    ])
+                    st.dataframe(_mf_df, use_container_width=True, hide_index=True)
+                    st.caption("Edita cada cliente na tab **Lista de Clientes** para completar os campos.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
