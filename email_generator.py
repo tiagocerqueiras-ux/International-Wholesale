@@ -301,12 +301,6 @@ Note: "PVP PT (ref.)" is Portuguese retail price (market reference only). "Unit 
 SUPPORT / EIS NOTES (use as footnotes below table if not "none"):
 {support_notes}
 
-FINANCIAL SUMMARY (show exactly these values):
-  Products subtotal : {subtotal:.2f} EUR
-  Freight / Transport: {freight_str}
-  VAT               : {vat_str}
-  TOTAL             : {grand_total:.2f} EUR
-
 EXTRA NOTES / SPECIAL INSTRUCTIONS: {notes or "none"}
 
 INSTRUCTIONS:
@@ -314,12 +308,10 @@ INSTRUCTIONS:
 2. Start with the branded header (below), then <p>Dear {client_name},</p> (or equivalent in {lang_full}), then opening paragraph:
    "Please find below our commercial proposal for your review, issued under deal reference {deal_id}. All prices are quoted in EUR and represent our best commercial conditions for the indicated quantities."
 3. Render the products table with ALL {n_skus} rows — do NOT skip, merge, or omit any product. Use the exact data from PRODUCTS TABLE DATA above.
-4. After the table add the SUPPORT/EIS footnotes (if any).
-5. Show the financial summary as a right-aligned summary block using class="summary-table". Bold the TOTAL line.
-6. After the closing </div> of the summary-table, output EXACTLY this HTML comment and nothing else: <!-- END -->
-   Do NOT add conditions, salutation, signature, note-box, warehouse info, payment info, or ANY other content after <!-- END -->.
-7. Do NOT mention stock levels, warehouse addresses, payment conditions, incoterms, or availability anywhere — these are added separately.
-8. Be professional, concise, B2B focused.
+4. After the table add the SUPPORT/EIS footnotes (if any), then output EXACTLY this HTML comment: <!-- END -->
+   STOP immediately after <!-- END -->. Do NOT write anything else — no summary, no conditions, no heading, no salutation, no signature, nothing.
+5. Do NOT mention stock levels, warehouse addresses, payment conditions, incoterms, availability, prices summary, or totals anywhere.
+6. Be professional, concise, B2B focused.
 
 CRITICAL FORMATTING RULES — DO NOT DEVIATE UNDER ANY CIRCUMSTANCES:
 - Return ONLY raw HTML — NO markdown fences (no ```html, no ```, no backticks)
@@ -439,8 +431,27 @@ Start with this EXACT branded header HTML:
         '\n</div>'
     )
 
+    # Summary financeiro — gerado em Python (100% controlado)
+    _tr_even = 'background:#fdeaea;'
+    _td_s    = 'padding:7px 16px;border:none;color:#333;'
+    _td_sl   = f'{_td_s}text-align:left;width:60%;'
+    _td_sr   = f'{_td_s}text-align:right;'
+    _td_tot  = f'{_td_s}font-weight:700;text-align:left;width:60%;border-top:2px solid #CC0000;'
+    _td_torv = f'{_td_s}font-weight:700;text-align:right;border-top:2px solid #CC0000;'
+    summary_html = (
+        '\n<div style="margin:24px 0;display:flex;justify-content:flex-end;">'
+        '\n<table style="border-collapse:collapse;width:360px;font-size:13px;"><tbody>'
+        f'\n  <tr><td style="{_td_sl}">Products Subtotal</td><td style="{_td_sr}">{subtotal:,.2f} EUR</td></tr>'
+        f'\n  <tr style="{_tr_even}"><td style="{_td_sl}">Freight / Transport</td><td style="{_td_sr}">{freight_str}</td></tr>'
+        f'\n  <tr><td style="{_td_sl}">VAT</td><td style="{_td_sr}">{vat_str}</td></tr>'
+        f'\n  <tr><td style="{_td_tot}">TOTAL</td><td style="{_td_torv}">{grand_total:,.2f} EUR</td></tr>'
+        '\n</tbody></table>'
+        '\n</div>'
+    )
+
     html_body = (
         html_body.rstrip()
+        + summary_html
         + note_box_html
         + conditions_html
         + f'\n<p style="margin-top:24px;font-size:14px;color:#333;">{closing}</p>'
