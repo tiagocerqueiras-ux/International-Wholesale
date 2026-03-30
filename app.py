@@ -685,7 +685,7 @@ if page == "🆕  Nova Cotação":
                             "Cliente":    _label,
                             "País":       _h.get("country","—"),
                             "Status":     _h.get("status","—"),
-                            "Margem %":   f"{_h.get('margin_pct',0):.1f}%",
+                            "Margem %":   _h.get('margin_pct') or "—",
                             "Valor (€)":  f"{float(_h.get('proposed_value') or 0):,.2f}",
                         })
                     st.dataframe(
