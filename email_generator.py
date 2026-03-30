@@ -81,10 +81,7 @@ def _build_products_context(skus_data: dict) -> tuple[str, str]:
 
         if eis_da > 0:
             notes.append(f"SKU {sku}: EIS Direitos Autor {eis_da:.2f} EUR/unit included in price")
-        if sell_in:
-            notes.append(f"SKU {sku}: Sell-In support {sell_in:.2f} EUR/unit available")
-        if sell_out:
-            notes.append(f"SKU {sku}: Sell-Out support {sell_out:.2f} EUR/unit available")
+        # Sell-In e Sell-Out são informação interna — não expor ao cliente
 
     return "\n".join(rows), "\n".join(notes) if notes else "none"
 

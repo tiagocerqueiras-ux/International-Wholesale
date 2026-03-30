@@ -690,8 +690,8 @@ elif page == "📋  Deals em Curso":
                                 _vat_rate_e = 0.23 if "23" in _vat_str_e else 0.0
                                 _freight_e  = float(deal.get("Frete (€)") or 0)
 
-                                eh = st.columns([0.8, 1.2, 2.5, 1.3, 1.3, 1.3])
-                                for col, lbl in zip(eh, ["Qty","SKU","Produto","FC Final","Preço Cliente","Total"]):
+                                eh = st.columns([0.7, 1.0, 1.4, 3.0, 1.3, 1.3, 1.3])
+                                for col, lbl in zip(eh, ["Qty","SKU","EAN","Produto","FC Final","Preço Cliente","Total"]):
                                     col.caption(lbl)
 
                                 new_skus = {}
@@ -700,9 +700,10 @@ elif page == "📋  Deals em Curso":
                                     fc_final = float(info.get("fc_final") or d.get("ufc_raw") or 0)
                                     old_pvp  = float(info.get("pvp") or fc_final)
                                     old_qty  = int(info.get("qty") or 1)
-                                    name     = f"{d.get('brand','')[:10]} · {d.get('name','')[:30]}"
+                                    ean      = d.get("ean") or "—"
+                                    name     = f"{d.get('brand','')} · {d.get('name','')}"
 
-                                    ec = st.columns([0.8, 1.2, 2.5, 1.3, 1.3, 1.3])
+                                    ec = st.columns([0.7, 1.0, 1.4, 3.0, 1.3, 1.3, 1.3])
                                     if f"eq_{did}_{sku}" not in st.session_state:
                                         st.session_state[f"eq_{did}_{sku}"] = old_qty
                                     if f"ep_{did}_{sku}" not in st.session_state:
@@ -712,13 +713,14 @@ elif page == "📋  Deals em Curso":
                                                                   key=f"eq_{did}_{sku}",
                                                                   label_visibility="collapsed")
                                     ec[1].markdown(f"`{sku}`")
-                                    ec[2].markdown(name)
-                                    ec[3].markdown(f"{fc_final:.2f} €")
-                                    new_pvp = ec[4].number_input("", min_value=0.0, step=0.5,
+                                    ec[2].markdown(f"`{ean}`")
+                                    ec[3].markdown(name)
+                                    ec[4].markdown(f"{fc_final:.2f} €")
+                                    new_pvp = ec[5].number_input("", min_value=0.0, step=0.5,
                                                                   format="%.2f",
                                                                   key=f"ep_{did}_{sku}",
                                                                   label_visibility="collapsed")
-                                    ec[5].markdown(f"**{new_pvp * new_qty:.2f} €**")
+                                    ec[6].markdown(f"**{new_pvp * new_qty:.2f} €**")
 
                                     new_info = dict(info)
                                     new_info["qty"] = new_qty
