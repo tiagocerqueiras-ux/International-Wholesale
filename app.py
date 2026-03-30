@@ -85,13 +85,14 @@ def email_approval_dialog():
     to_email  = pending.get("client_email", "")
     language  = pending.get("language", "EN")
     client    = pending.get("client_name", "")
+    _company  = pending.get("company", "")
 
     st.markdown("Revê o email antes de enviar.")
     st.divider()
     st.components.v1.html(html_body, height=520, scrolling=True)
     st.divider()
 
-    subject = build_subject(did, client, language)
+    subject = build_subject(did, client, language, company=_company)
     st.caption(f"**Para:** {to_email}  ·  **Assunto:** {subject}")
 
     c1, c2, c3 = st.columns([3, 2, 2])
@@ -639,6 +640,7 @@ if page == "🆕  Nova Cotação":
                             "margin_calc":  margin_calc,
                             "client_email": email,
                             "client_name":  client,
+                            "company":      company,
                             "language":     language,
                         }
                         st.rerun()
@@ -918,6 +920,7 @@ elif page == "📋  Deals em Curso":
                                     "margin_calc": margin_calc,
                                     "client_email": resend_to,
                                     "client_name": str(deal.get("Cliente", "")),
+                                    "company":     str(deal.get("company", "") or ""),
                                     "language":    str(deal.get("Língua", "EN")),
                                 }
                                 st.rerun()
@@ -947,7 +950,8 @@ elif page == "📋  Deals em Curso":
                                 with st.expander("👁️ Pré-visualizar", expanded=True):
                                     st.components.v1.html(html, height=350, scrolling=True)
                                 fu_to  = str(deal.get("Email Cliente",""))
-                                fu_sub = build_subject(did, cl, str(deal.get("Língua","EN")))
+                                fu_sub = build_subject(did, cl, str(deal.get("Língua","EN")),
+                                                       company=str(deal.get("company","") or ""))
                                 fu_sub = fu_sub.replace("Commercial Proposal","Follow-up")
                                 if fu_to:
                                     if st.button("🚀 Enviar Follow-up", key=f"fu_send_{did}", type="primary"):

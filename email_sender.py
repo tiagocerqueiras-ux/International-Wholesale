@@ -58,11 +58,13 @@ def create_draft(to: str, subject: str, html_body: str, send: bool = False) -> t
     return send_email(to=to, subject=subject, html_body=html_body)
 
 
-def build_subject(deal_id: str, client_name: str, language: str = "EN") -> str:
+def build_subject(deal_id: str, client_name: str, language: str = "EN", company: str = "") -> str:
+    # Formato: "Título — DEAL_ID | Empresa - Contacto"  (ou só "| Contacto" se sem empresa)
+    recipient = f"{company} - {client_name}" if company and company.strip() else client_name
     templates = {
-        "EN": f"Commercial Proposal — {deal_id} | {client_name}",
-        "PT": f"Proposta Comercial — {deal_id} | {client_name}",
-        "ES": f"Propuesta Comercial — {deal_id} | {client_name}",
-        "FR": f"Proposition Commerciale — {deal_id} | {client_name}",
+        "EN": f"Commercial Proposal — {deal_id} | {recipient}",
+        "PT": f"Proposta Comercial — {deal_id} | {recipient}",
+        "ES": f"Propuesta Comercial — {deal_id} | {recipient}",
+        "FR": f"Proposition Commerciale — {deal_id} | {recipient}",
     }
     return templates.get(language.upper(), templates["EN"])
