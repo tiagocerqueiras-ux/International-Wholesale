@@ -39,23 +39,109 @@ def _get_client() -> anthropic.Anthropic:
         _client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     return _client
 
-# ── Texto obrigatório sobre VAT e transporte ──────────────────────────────────
+# ── Traduções por língua (todas as labels geradas em Python) ──────────────────
 
-VAT_TRANSPORT_NOTE = (
-    "If you choose to arrange your own collection, a VAT deposit will be required. "
-    "This deposit will be fully refunded upon receipt of the official export documentation.\n"
-    "Alternatively, if Worten manages the delivery, a transport quotation will be provided. "
-    "Freight costs will be invoiced separately and added to the prices indicated above."
-)
+_T = {
+    "EN": {
+        "vat_transport_note": (
+            "If you choose to arrange your own collection, a VAT deposit will be required. "
+            "This deposit will be fully refunded upon receipt of the official export documentation.\n"
+            "Alternatively, if Worten manages the delivery, a transport quotation will be provided. "
+            "Freight costs will be invoiced separately and added to the prices indicated above."
+        ),
+        "products_subtotal":   "Products Subtotal",
+        "freight_transport":   "Freight / Transport",
+        "vat":                 "VAT",
+        "total":               "TOTAL",
+        "freight_tbd":         "TBD (transport quotation to follow)",
+        "vat_exempt":          "Exempt — Export sale (0%)",
+        "vat_pct":             "VAT 23% — {amount} EUR",
+        "commercial_cond":     "Commercial Conditions",
+        "incoterm":            "Incoterm",
+        "payment_cond":        "Payment Conditions",
+        "availability":        "Availability / ETA",
+        "eis_note":            "SKU {sku}: Copyright (EIS) {eis:.2f} EUR/unit included in price",
+        "closing":             "Kind regards,",
+    },
+    "PT": {
+        "vat_transport_note": (
+            "Caso opte por recolha própria, será exigido um depósito de IVA. "
+            "Este depósito será integralmente reembolsado após receção da documentação oficial de exportação.\n"
+            "Em alternativa, se a Worten gerir a entrega, será fornecida uma cotação de transporte. "
+            "Os custos de frete serão faturados separadamente e acrescidos aos preços indicados acima."
+        ),
+        "products_subtotal":   "Subtotal Produtos",
+        "freight_transport":   "Frete / Transporte",
+        "vat":                 "IVA",
+        "total":               "TOTAL",
+        "freight_tbd":         "A definir (cotação de transporte a enviar)",
+        "vat_exempt":          "Isento — Venda para exportação (0%)",
+        "vat_pct":             "IVA 23% — {amount} EUR",
+        "commercial_cond":     "Condições Comerciais",
+        "incoterm":            "Incoterm",
+        "payment_cond":        "Condições de Pagamento",
+        "availability":        "Disponibilidade / ETA",
+        "eis_note":            "SKU {sku}: Direitos de Autor (EIS) {eis:.2f} EUR/un. incluído no preço",
+        "closing":             "Com os melhores cumprimentos,",
+    },
+    "ES": {
+        "vat_transport_note": (
+            "Si opta por organizar su propia recogida, se requerirá un depósito de IVA. "
+            "Este depósito será reembolsado íntegramente tras la recepción de la documentación oficial de exportación.\n"
+            "Alternativamente, si Worten gestiona la entrega, se facilitará un presupuesto de transporte. "
+            "Los gastos de flete se facturarán por separado y se añadirán a los precios indicados arriba."
+        ),
+        "products_subtotal":   "Subtotal Productos",
+        "freight_transport":   "Flete / Transporte",
+        "vat":                 "IVA",
+        "total":               "TOTAL",
+        "freight_tbd":         "A definir (cotización de transporte pendiente)",
+        "vat_exempt":          "Exento — Venta para exportación (0%)",
+        "vat_pct":             "IVA 23% — {amount} EUR",
+        "commercial_cond":     "Condiciones Comerciales",
+        "incoterm":            "Incoterm",
+        "payment_cond":        "Condiciones de Pago",
+        "availability":        "Disponibilidad / ETA",
+        "eis_note":            "SKU {sku}: Derechos de autor (EIS) {eis:.2f} EUR/ud. incluido en el precio",
+        "closing":             "Atentamente,",
+    },
+    "FR": {
+        "vat_transport_note": (
+            "Si vous choisissez d'organiser votre propre enlèvement, un dépôt de TVA sera requis. "
+            "Ce dépôt vous sera intégralement remboursé dès réception des documents officiels d'exportation.\n"
+            "Alternativement, si Worten gère la livraison, un devis de transport vous sera fourni. "
+            "Les frais de transport seront facturés séparément et s'ajouteront aux prix indiqués ci-dessus."
+        ),
+        "products_subtotal":   "Sous-total Produits",
+        "freight_transport":   "Fret / Transport",
+        "vat":                 "TVA",
+        "total":               "TOTAL",
+        "freight_tbd":         "À définir (devis transport à suivre)",
+        "vat_exempt":          "Exonéré — Vente à l'exportation (0%)",
+        "vat_pct":             "TVA 23% — {amount} EUR",
+        "commercial_cond":     "Conditions Commerciales",
+        "incoterm":            "Incoterm",
+        "payment_cond":        "Conditions de Paiement",
+        "availability":        "Disponibilité / ETA",
+        "eis_note":            "SKU {sku}: Droits d'auteur (EIS) {eis:.2f} EUR/unité inclus dans le prix",
+        "closing":             "Cordialement,",
+    },
+}
+
+def _t(language: str, key: str, **kwargs) -> str:
+    """Devolve a tradução para a língua dada (fallback EN)."""
+    lang = language.upper() if language else "EN"
+    txt = _T.get(lang, _T["EN"]).get(key, _T["EN"].get(key, key))
+    return txt.format(**kwargs) if kwargs else txt
 
 
 # ── Formatação dos dados de produtos ─────────────────────────────────────────
 
-def _build_products_context(skus_data: dict) -> tuple[str, str]:
+def _build_products_context(skus_data: dict, language: str = "EN") -> tuple[str, str]:
     """
     Gera dois blocos para o prompt:
       1. product_rows  — linhas prontas para a tabela HTML (pipe-separated)
-      2. support_notes — flags de sell-in/sell-out/eis para rodapé
+      2. support_notes — flags de eis para rodapé (traduzido conforme língua)
     """
     rows  = []
     notes = []
@@ -69,8 +155,6 @@ def _build_products_context(skus_data: dict) -> tuple[str, str]:
         brand    = d.get("brand") or "N/A"
         pvp_pt   = d.get("pvp_pt")
         eis_da   = d.get("eis_da") or 0.0
-        sell_in  = d.get("sell_in")
-        sell_out = d.get("sell_out")
 
         pvp_pt_str = f"{pvp_pt:.2f}" if pvp_pt is not None else "N/A"
         total      = round(pvp * qty, 2)
@@ -80,7 +164,7 @@ def _build_products_context(skus_data: dict) -> tuple[str, str]:
         )
 
         if eis_da > 0:
-            notes.append(f"SKU {sku}: EIS Direitos Autor {eis_da:.2f} EUR/unit included in price")
+            notes.append(_t(language, "eis_note", sku=sku, eis=eis_da))
         # Sell-In e Sell-Out são informação interna — não expor ao cliente
 
     return "\n".join(rows), "\n".join(notes) if notes else "none"
@@ -263,7 +347,7 @@ def generate_proposal(
         cost_total += fc_final * qty
 
     margin_pct = ((pvp_total - cost_total) / pvp_total * 100) if pvp_total else 0.0
-    product_rows, support_notes = _build_products_context(skus_data)
+    product_rows, support_notes = _build_products_context(skus_data, language)
     n_skus = len(skus_data)
 
     # Logo para a assinatura
@@ -279,8 +363,9 @@ def generate_proposal(
     subtotal   = round(pvp_total, 2)
     vat_amount = round((subtotal + freight) * vat_rate, 2)
     grand_total = round(subtotal + freight + vat_amount, 2)
-    freight_str = "TBD (transport quotation to follow)" if not freight else f"{freight:.2f} EUR"
-    vat_str     = f"Exempt — Export sale (0%)" if vat_rate == 0 else f"IVA 23% — {vat_amount:.2f} EUR"
+    freight_str = _t(language, "freight_tbd") if not freight else f"{freight:.2f} EUR"
+    vat_str     = (_t(language, "vat_exempt") if vat_rate == 0
+                   else _t(language, "vat_pct", amount=f"{vat_amount:.2f}"))
 
     prompt = f"""You are {USER_NAME} from {COMPANY_NAME}.
 Write a complete, professional B2B commercial proposal email in {lang_full}.
@@ -377,14 +462,10 @@ Start with this EXACT branded header HTML:
         html_body = html_body.rstrip() + ('</div>' * open_divs)
 
     # 7. Blocos Python gerados com inline styles (imunes a herança de CSS pai)
-    closing_lang = {
-        "EN": "Kind regards,", "PT": "Com os melhores cumprimentos,",
-        "ES": "Atentamente,", "FR": "Cordialement,",
-    }
-    closing = closing_lang.get(language.upper(), "Kind regards,")
+    closing = _t(language, "closing")
 
-    # Nota VAT/transporte — gerada em Python (não pelo Claude)
-    _vat_lines = VAT_TRANSPORT_NOTE.split('\n')
+    # Nota VAT/transporte — gerada em Python (não pelo Claude), traduzida
+    _vat_lines = _t(language, "vat_transport_note").split('\n')
     note_box_html = (
         '\n<div style="background:#fff5f5;border-left:4px solid #CC0000;'
         'padding:12px 16px;margin:20px 0;font-size:12.5px;color:#444;'
@@ -398,16 +479,16 @@ Start with this EXACT branded header HTML:
     _td_val = 'padding:8px 16px;border:none;color:#444;background:#f5f5f5;'
 
     conditions_html = (
-        '\n<h3 style="color:#CC0000;font-size:13px;text-transform:uppercase;'
-        'letter-spacing:.5px;margin:24px 0 8px;font-weight:700;">Commercial Conditions</h3>'
+        f'\n<h3 style="color:#CC0000;font-size:13px;text-transform:uppercase;'
+        f'letter-spacing:.5px;margin:24px 0 8px;font-weight:700;">{_t(language, "commercial_cond")}</h3>'
         '\n<div style="background:#f5f5f5;border:1px solid #e0e0e0;'
         'border-radius:4px;padding:4px 0;font-size:13px;">'
         '\n  <table style="width:100%;border-collapse:collapse;margin:0;"><tbody>'
-        f'\n    <tr><td style="{_td_lbl}">Incoterm</td>'
+        f'\n    <tr><td style="{_td_lbl}">{_t(language, "incoterm")}</td>'
         f'<td style="{_td_val}">{effective_incoterm}</td></tr>'
-        f'\n    <tr><td style="{_td_lbl}">Payment Conditions</td>'
+        f'\n    <tr><td style="{_td_lbl}">{_t(language, "payment_cond")}</td>'
         f'<td style="{_td_val}">{effective_payment}</td></tr>'
-        f'\n    <tr><td style="{_td_lbl}">Availability / ETA</td>'
+        f'\n    <tr><td style="{_td_lbl}">{_t(language, "availability")}</td>'
         f'<td style="{_td_val}">{availability or "Ex-stock"}</td></tr>'
         '\n  </tbody></table>'
         '\n</div>'
@@ -444,10 +525,10 @@ Start with this EXACT branded header HTML:
     summary_html = (
         '\n<div style="margin:24px 0;display:flex;justify-content:flex-end;">'
         '\n<table style="border-collapse:collapse;font-size:13px;min-width:420px;"><tbody>'
-        f'\n  <tr><td style="{_td_l}">Products Subtotal</td><td style="{_td_r}">{subtotal:,.2f} EUR</td></tr>'
-        f'\n  <tr><td style="{_td_le}">Freight / Transport</td><td style="{_td_re}">{freight_str}</td></tr>'
-        f'\n  <tr><td style="{_td_l}">VAT</td><td style="{_td_r}">{vat_str}</td></tr>'
-        f'\n  <tr><td style="{_td_tl}">TOTAL</td><td style="{_td_tr}">{grand_total:,.2f} EUR</td></tr>'
+        f'\n  <tr><td style="{_td_l}">{_t(language, "products_subtotal")}</td><td style="{_td_r}">{subtotal:,.2f} EUR</td></tr>'
+        f'\n  <tr><td style="{_td_le}">{_t(language, "freight_transport")}</td><td style="{_td_re}">{freight_str}</td></tr>'
+        f'\n  <tr><td style="{_td_l}">{_t(language, "vat")}</td><td style="{_td_r}">{vat_str}</td></tr>'
+        f'\n  <tr><td style="{_td_tl}">{_t(language, "total")}</td><td style="{_td_tr}">{grand_total:,.2f} EUR</td></tr>'
         '\n</tbody></table>'
         '\n</div>'
     )
