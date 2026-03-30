@@ -239,7 +239,13 @@ def update_deal_prices(deal_id: str, skus_data: dict, pvp_total: float, margin_p
         return False
 
 
-def duplicate_deal(deal_id: str, new_client: str, new_email: str, new_country: str = "") -> str:
+def duplicate_deal(
+    deal_id: str,
+    new_client: str,
+    new_email: str,
+    new_country: str = "",
+    new_company: str = "",
+) -> str:
     """Duplica um deal existente para um novo cliente. Devolve o novo deal_id."""
     try:
         client = _get_client()
@@ -250,9 +256,10 @@ def duplicate_deal(deal_id: str, new_client: str, new_email: str, new_country: s
         new_id  = _next_deal_id()
         now     = datetime.now().strftime("%Y-%m-%d %H:%M")
         row["deal_id"]      = new_id
-        row["client"]       = new_client
+        row["client"]       = new_client          # nome do contacto (pessoa)
         row["client_email"] = new_email
         row["country"]      = new_country or row.get("country", "")
+        row["company"]      = new_company if new_company else row.get("company", "")
         row["status"]       = "Rascunho"
         row["created_at"]   = now
         row["updated_at"]   = now

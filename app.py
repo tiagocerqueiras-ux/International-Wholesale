@@ -784,6 +784,13 @@ elif page == "📋  Deals em Curso":
                         _freight  = float(deal.get("Frete (€)") or 0)
                         with st.spinner("A gerar proposta com Claude AI..."):
                             try:
+                                # Filtrar notas internas (ex: "Duplicado de BM-...") — não expor ao cliente
+                                _raw_notes = str(deal.get("Notas", "") or "")
+                                _email_notes = "\n".join(
+                                    l for l in _raw_notes.splitlines()
+                                    if not l.strip().lower().startswith("duplicado de")
+                                    and not l.strip().lower().startswith("[")
+                                ).strip()
                                 html_body, pvp_calc, margin_calc = generate_proposal(
                                     client_name=str(deal.get("Cliente", "")),
                                     client_email=resend_to,
@@ -791,12 +798,13 @@ elif page == "📋  Deals em Curso":
                                     language=str(deal.get("Língua", "EN")),
                                     skus_data=_skus,
                                     deal_id=did,
-                                    notes=str(deal.get("Notas", "")),
+                                    notes=_email_notes,
                                     incoterm=str(deal.get("Incoterm", "")),
                                     payment_conditions=str(deal.get("Pagamento", "")),
                                     freight_cost=_freight,
                                     vat_rate=_vat_rate,
                                     availability=str(deal.get("Availability / ETA", "Ex-stock")),
+                                    company=str(deal.get("company", "") or ""),
                                 )
                                 st.session_state["pending_email"] = {
                                     "html_body":   html_body,
@@ -855,23 +863,28 @@ elif page == "📋  Deals em Curso":
                     # Duplicar
                     with da1:
                         st.markdown("**📋 Duplicar Deal**")
-                        dup_client  = st.text_input("Nome do novo cliente", key=f"dup_cl_{did}",
+                        dup_contact = st.text_input("Nome do contacto *", key=f"dup_cl_{did}",
                                                      placeholder="Ex: João Silva")
-                        dup_email   = st.text_input("Email do novo cliente", key=f"dup_em_{did}",
+                        dup_company = st.text_input("Empresa", key=f"dup_co_{did}",
+                                                     placeholder="Ex: Flying Shrimp Ltd")
+                        dup_email   = st.text_input("Email *", key=f"dup_em_{did}",
                                                      placeholder="Ex: joao@empresa.com")
                         dup_country = st.text_input("País", key=f"dup_ct_{did}",
                                                      placeholder="Ex: Poland",
                                                      value=cntry)
                         if st.button("📋 Duplicar para este cliente", key=f"dup_btn_{did}"):
-                            if dup_client and dup_email:
-                                new_id = duplicate_deal(did, dup_client, dup_email, dup_country)
+                            if dup_contact and dup_email:
+                                new_id = duplicate_deal(
+                                    did, dup_contact, dup_email, dup_country,
+                                    new_company=dup_company,
+                                )
                                 if new_id:
                                     st.success(f"✅ Deal duplicado → **{new_id}** criado como Rascunho.")
                                     st.rerun()
                                 else:
                                     st.error("Erro ao duplicar. Tenta novamente.")
                             else:
-                                st.warning("Preenche o nome e email do novo cliente.")
+                                st.warning("Preenche o nome do contacto e email.")
 
                     # Apagar
                     with da2:
