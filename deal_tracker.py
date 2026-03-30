@@ -39,7 +39,14 @@ def _next_deal_id() -> str:
             num = 1
     except Exception:
         num = 1
-    return f"{prefix}{num:03d}"
+    # Garantir unicidade — avançar até encontrar ID livre
+    client = _get_client()
+    while True:
+        candidate = f"{prefix}{num:03d}"
+        check = client.table("deals").select("deal_id").eq("deal_id", candidate).execute()
+        if not check.data:
+            return candidate
+        num += 1
 
 
 # ── Mapeamento HEADERS → chaves internas (para list_deals / get_deal) ─────────
