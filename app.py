@@ -624,6 +624,55 @@ elif page == "📋  Deals em Curso":
     if not deals:
         st.info("Sem deals para os filtros selecionados.")
     else:
+        # ── Apagar múltiplos deals ─────────────────────────────────────────
+        if _role in CAN_EDIT_DEALS:
+            with st.expander("🗑️ Apagar múltiplos deals"):
+                st.caption("Seleciona os deals que pretendes eliminar e confirma no final.")
+                _bulk_selected = []
+                for _ds in reversed(deals):
+                    _bdid   = str(_ds.get("Deal ID",""))
+                    _bcl    = str(_ds.get("Cliente",""))
+                    _bst    = str(_ds.get("Status",""))
+                    _bval   = _ds.get("Valor Proposto (€)","")
+                    _blabel = (f"{_bdid}  ·  {_bcl}  ·  "
+                               f"{STATUS_EMOJI.get(_bst,'')} {_bst}  ·  {fmt2(_bval)} €")
+                    if st.checkbox(_blabel, key=f"bulk_chk_{_bdid}"):
+                        _bulk_selected.append(_bdid)
+
+                if _bulk_selected:
+                    st.warning(
+                        f"**{len(_bulk_selected)} deal(s) selecionado(s):** "
+                        + ", ".join(_bulk_selected)
+                    )
+                    if not st.session_state.get("bulk_del_confirm"):
+                        if st.button(
+                            f"🗑️ Apagar {len(_bulk_selected)} deal(s) selecionado(s)",
+                            key="bulk_del_btn", type="secondary",
+                        ):
+                            st.session_state["bulk_del_confirm"] = True
+                            st.rerun()
+                    else:
+                        st.error(
+                            f"⚠️ Esta ação é **irreversível**. "
+                            f"Confirmas o apagamento de **{len(_bulk_selected)} deal(s)**?"
+                        )
+                        _bc1, _bc2 = st.columns(2)
+                        if _bc1.button("✅ Sim, apagar todos", key="bulk_del_yes", type="primary"):
+                            _errs = [bid for bid in _bulk_selected if not delete_deal(bid)]
+                            st.session_state["bulk_del_confirm"] = False
+                            for bid in _bulk_selected:
+                                st.session_state.pop(f"bulk_chk_{bid}", None)
+                            if _errs:
+                                st.error(f"Erro ao apagar: {', '.join(_errs)}")
+                            else:
+                                st.success(f"✅ {len(_bulk_selected)} deal(s) apagado(s) com sucesso.")
+                            st.rerun()
+                        if _bc2.button("❌ Cancelar", key="bulk_del_no"):
+                            st.session_state["bulk_del_confirm"] = False
+                            st.rerun()
+                else:
+                    st.info("Seleciona pelo menos um deal para apagar.")
+
         for deal_summary in reversed(deals):
             did    = str(deal_summary.get("Deal ID",""))
             cl     = str(deal_summary.get("Cliente",""))
