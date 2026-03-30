@@ -364,7 +364,7 @@ if page == "🆕  Nova Cotação":
 
         # Cabeçalho
         _unit = "%" if s_margin_mode == "Percentagem (%)" else "€"
-        hcols = st.columns([0.5, 1.2, 1.5, 2.8, 1.4, 1.4, 1.4, 1.2, 1.6, 1.4, 1.4, 0.5])
+        hcols = st.columns([0.8, 1.2, 1.5, 2.8, 1.4, 1.4, 1.4, 1.2, 1.6, 1.4, 1.4, 0.5])
         for col, lbl in zip(hcols, ["Qty","SKU","EAN","Produto",
                                      "FC Simulador","SO Negoc. (€)","FC Final",
                                      f"Margem ({_unit})","Preço Cliente","EIS DA","Sell-In","✕"]):
@@ -382,7 +382,7 @@ if page == "🆕  Nova Cotação":
             sell_in   = d.get("sell_in")
             ean       = d.get("ean") or "—"
 
-            cols = st.columns([0.5, 1.2, 1.5, 2.8, 1.4, 1.4, 1.4, 1.2, 1.6, 1.4, 1.4, 0.5])
+            cols = st.columns([0.8, 1.2, 1.5, 2.8, 1.4, 1.4, 1.4, 1.2, 1.6, 1.4, 1.4, 0.5])
 
             if f"qty_{sku}" not in st.session_state:
                 st.session_state[f"qty_{sku}"] = 1
@@ -828,7 +828,7 @@ elif page == "🏭  Pedido Fornecedor":
     if sup_basket:
         st.markdown("---")
         # Cabeçalho
-        sh = st.columns([0.5, 1.2, 1.5, 3.5, 1.6, 1.6, 1.6, 0.5])
+        sh = st.columns([0.8, 1.2, 1.5, 3.5, 1.6, 1.6, 1.6, 0.5])
         for col, lbl in zip(sh, ["Qty","SKU","EAN","Produto","FC Simulador","SO Negoc. (€)","FC Final","✕"]):
             col.caption(lbl)
         st.markdown("---")
@@ -841,7 +841,7 @@ elif page == "🏭  Pedido Fornecedor":
             ean       = d.get("ean") or "—"
             name      = f"{d.get('brand','')} · {d.get('name','')[:40]}"
 
-            sc = st.columns([0.5, 1.2, 1.5, 3.5, 1.6, 1.6, 1.6, 0.5])
+            sc = st.columns([0.8, 1.2, 1.5, 3.5, 1.6, 1.6, 1.6, 0.5])
             if f"sqty_{sku}" not in st.session_state:
                 st.session_state[f"sqty_{sku}"] = 1
             sup_qty_map[sku] = sc[0].number_input("", min_value=1, step=1,
