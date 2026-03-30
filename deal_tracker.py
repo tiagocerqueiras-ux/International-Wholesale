@@ -239,6 +239,42 @@ def update_deal_prices(deal_id: str, skus_data: dict, pvp_total: float, margin_p
         return False
 
 
+def duplicate_deal(deal_id: str, new_client: str, new_email: str, new_country: str = "") -> str:
+    """Duplica um deal existente para um novo cliente. Devolve o novo deal_id."""
+    try:
+        client = _get_client()
+        res = client.table("deals").select("*").eq("deal_id", deal_id).single().execute()
+        if not res.data:
+            return ""
+        row = dict(res.data)
+        new_id  = _next_deal_id()
+        now     = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row["deal_id"]      = new_id
+        row["client"]       = new_client
+        row["client_email"] = new_email
+        row["country"]      = new_country or row.get("country", "")
+        row["status"]       = "Rascunho"
+        row["created_at"]   = now
+        row["updated_at"]   = now
+        row["notes"]        = f"Duplicado de {deal_id}"
+        row.pop("id", None)   # remover PK auto
+        client.table("deals").insert(row).execute()
+        return new_id
+    except Exception as e:
+        print(f"[deal_tracker] duplicate_deal erro: {e}")
+        return ""
+
+
+def delete_deal(deal_id: str) -> bool:
+    """Apaga permanentemente um deal."""
+    try:
+        _get_client().table("deals").delete().eq("deal_id", deal_id).execute()
+        return True
+    except Exception as e:
+        print(f"[deal_tracker] delete_deal erro: {e}")
+        return False
+
+
 def list_deals(status_filter: str = None, salesperson_filter: str = None) -> list:
     try:
         q = _get_client().table("deals").select(

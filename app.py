@@ -17,7 +17,7 @@ from config import (
     STOCKS_EMAIL, ADMIN_EMAIL,
 )
 from sku_lookup import lookup_skus, search_by_name, build_cache
-from deal_tracker import add_deal, update_status, update_margin, update_deal_prices, list_deals, get_deal, deal_products_table
+from deal_tracker import add_deal, update_status, update_margin, update_deal_prices, duplicate_deal, delete_deal, list_deals, get_deal, deal_products_table
 from email_generator import generate_proposal, generate_followup, save_email_html, generate_closing_emails, generate_supplier_request
 from email_sender import create_draft, build_subject
 from client_tracker import (
@@ -846,6 +846,55 @@ elif page == "📋  Deals em Curso":
                             except Exception as e:
                                 st.error(f"Erro: {e}")
                                 import traceback; st.code(traceback.format_exc())
+
+                # ── Duplicar / Apagar Deal ─────────────────────────────────
+                if _role in CAN_EDIT_DEALS:
+                    st.markdown("---")
+                    da1, da2 = st.columns(2)
+
+                    # Duplicar
+                    with da1:
+                        st.markdown("**📋 Duplicar Deal**")
+                        dup_client  = st.text_input("Nome do novo cliente", key=f"dup_cl_{did}",
+                                                     placeholder="Ex: João Silva")
+                        dup_email   = st.text_input("Email do novo cliente", key=f"dup_em_{did}",
+                                                     placeholder="Ex: joao@empresa.com")
+                        dup_country = st.text_input("País", key=f"dup_ct_{did}",
+                                                     placeholder="Ex: Poland",
+                                                     value=cntry)
+                        if st.button("📋 Duplicar para este cliente", key=f"dup_btn_{did}"):
+                            if dup_client and dup_email:
+                                new_id = duplicate_deal(did, dup_client, dup_email, dup_country)
+                                if new_id:
+                                    st.success(f"✅ Deal duplicado → **{new_id}** criado como Rascunho.")
+                                    st.rerun()
+                                else:
+                                    st.error("Erro ao duplicar. Tenta novamente.")
+                            else:
+                                st.warning("Preenche o nome e email do novo cliente.")
+
+                    # Apagar
+                    with da2:
+                        st.markdown("**🗑️ Apagar Deal**")
+                        st.caption("⚠️ Esta ação é irreversível — o deal será eliminado permanentemente.")
+                        _confirm_key = f"confirm_del_{did}"
+                        if not st.session_state.get(_confirm_key):
+                            if st.button("🗑️ Apagar Deal", key=f"del_btn_{did}", type="secondary"):
+                                st.session_state[_confirm_key] = True
+                                st.rerun()
+                        else:
+                            st.warning(f"Tens a certeza que queres apagar **{did}**?")
+                            c_yes, c_no = st.columns(2)
+                            if c_yes.button("✅ Sim, apagar", key=f"del_yes_{did}", type="primary"):
+                                if delete_deal(did):
+                                    st.session_state.pop(_confirm_key, None)
+                                    st.success(f"✅ Deal **{did}** apagado.")
+                                    st.rerun()
+                                else:
+                                    st.error("Erro ao apagar.")
+                            if c_no.button("❌ Cancelar", key=f"del_no_{did}"):
+                                st.session_state.pop(_confirm_key, None)
+                                st.rerun()
 
                 # ── Fechar Deal ─────────────────────────────────────────────
                 st.markdown("---")
