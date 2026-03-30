@@ -105,6 +105,7 @@ def add_deal(
     freight_cost: float = 0.0,
     availability: str = "",
     salesperson_email: str = "",
+    company: str = "",
 ) -> str:
     deal_id = _next_deal_id()
     now     = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -158,6 +159,7 @@ def add_deal(
         "notes":              notes,
         "skus_detail":        skus_data,
         "salesperson_email":  salesperson_email,
+        "company":            company,
     }
 
     _get_client().table("deals").insert(row).execute()

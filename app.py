@@ -246,11 +246,13 @@ if page == "🆕  Nova Cotação":
 
     # ── 1. Cliente ────────────────────────────────────────────────────────────
     st.subheader("1. Dados do Cliente")
-    c1, c2, c3, c4 = st.columns([2,1.5,2,1])
-    client   = c1.text_input("Nome do cliente *", value=_crm_pre.get("client",""), placeholder="Ex: Geppit Group EOOD")
-    country  = c2.text_input("País *", value=_crm_pre.get("country",""), placeholder="Ex: Bulgaria")
-    email    = c3.text_input("Email do cliente *", value=_crm_pre.get("email",""), placeholder="Ex: contact@geppit.eu")
-    language = c4.selectbox("Língua", ["EN","PT","ES","FR"])
+    c1, c2, c3 = st.columns([2, 2, 1.5])
+    client   = c1.text_input("Nome do cliente *", value=_crm_pre.get("client",""), placeholder="Ex: João Silva")
+    company  = c2.text_input("Empresa", value=_crm_pre.get("company",""), placeholder="Ex: Geppit Group EOOD")
+    country  = c3.text_input("País *", value=_crm_pre.get("country",""), placeholder="Ex: Bulgaria")
+    c4, c5 = st.columns([3, 1])
+    email    = c4.text_input("Email do cliente *", value=_crm_pre.get("email",""), placeholder="Ex: contact@geppit.eu")
+    language = c5.selectbox("Língua", ["EN","PT","ES","FR"])
     notes = st.text_area("Notas / instruções adicionais para o email (opcional)", height=55,
         placeholder="Ex: desconto extra 2%, prazo especial...",
         help="Contexto adicional para personalizar o email gerado pelo Claude AI.")
@@ -322,8 +324,9 @@ if page == "🆕  Nova Cotação":
         else:
             margin_val = st.number_input("Margem €/un.", min_value=0.0, max_value=9999.0, value=10.0, step=1.0)
 
-    btn_add, btn_clear = st.columns([2,6])
-    add_clicked = btn_add.button("➕  Adicionar ao Cesto", type="primary")
+    btn_add, btn_manual, btn_clear = st.columns([2, 2, 4])
+    add_clicked    = btn_add.button("➕  Adicionar ao Cesto", type="primary")
+    manual_clicked = btn_manual.button("✏️  Produto Manual")
 
     if add_clicked and ids_raw.strip():
         import re
@@ -353,6 +356,50 @@ if page == "🆕  Nova Cotação":
             st.session_state["selected_incoterm"] = selected_incoterm
             st.session_state["payment_conditions"] = payment_conditions
             st.success(f"✅ {len(found)} produto(s) adicionado(s) ao cesto.")
+
+    # ── Produto manual ────────────────────────────────────────────────────────
+    if "show_manual_form" not in st.session_state:
+        st.session_state["show_manual_form"] = False
+    if manual_clicked:
+        st.session_state["show_manual_form"] = not st.session_state["show_manual_form"]
+
+    if st.session_state.get("show_manual_form"):
+        with st.container(border=True):
+            st.caption("✏️ Adicionar produto manualmente")
+            m1, m2, m3, m4 = st.columns([1.5, 2, 3, 1.5])
+            man_sku   = m1.text_input("SKU / Ref.", placeholder="Ex: REF-001", key="man_sku")
+            man_ean   = m2.text_input("EAN", placeholder="Ex: 1234567890123", key="man_ean")
+            man_name  = m3.text_input("Descrição *", placeholder="Ex: Samsung TV 55\" QLED", key="man_name")
+            man_brand = m4.text_input("Marca", placeholder="Ex: Samsung", key="man_brand")
+            m5, m6, m7 = st.columns([1.5, 1.5, 5])
+            man_cost  = m5.number_input("Custo (€) *", min_value=0.0, value=0.0, step=1.0, format="%.2f", key="man_cost")
+            man_pvp   = m6.number_input("Preço Cliente (€)", min_value=0.0, value=0.0, step=1.0, format="%.2f", key="man_pvp",
+                                         help="Opcional — deixar 0 para usar margem global")
+            if st.button("➕ Adicionar produto manual", type="primary"):
+                if man_name and man_cost > 0:
+                    _ref = man_sku.strip() or f"MANUAL-{len(st.session_state['product_basket'])+1:03d}"
+                    st.session_state["product_basket"][_ref] = {
+                        "sku_id":  _ref,
+                        "ean":     man_ean.strip() or "N/A",
+                        "name":    man_name.strip(),
+                        "brand":   man_brand.strip() or "—",
+                        "ufc_raw": man_cost,
+                        "pvp_pt":  None,
+                        "eis_total": 0.0,
+                        "eis_da":  0,
+                        "sell_in": None,
+                        "sell_out": 0.0,
+                        "_manual": True,
+                        "_pvp_override": man_pvp if man_pvp > 0 else None,
+                    }
+                    st.session_state["so_manual"][_ref] = 0.0
+                    st.session_state["margin_mode"]  = margin_mode
+                    st.session_state["margin_val"]   = margin_val
+                    st.session_state["show_manual_form"] = False
+                    st.success(f"✅ Produto manual **{_ref}** adicionado.")
+                    st.rerun()
+                else:
+                    st.error("Preenche pelo menos Descrição e Custo.")
 
     # ── Cesto de produtos ─────────────────────────────────────────────────────
     basket = st.session_state.get("product_basket", {})
@@ -518,7 +565,8 @@ if page == "🆕  Nova Cotação":
                                    payment_conditions=s_payment,
                                    freight_cost=freight_cost,
                                    availability=availability,
-                                   salesperson_email=_cu.get("email",""))
+                                   salesperson_email=_cu.get("email",""),
+                                   company=company)
 
             if criar_deal:
                 st.success(f"✅ Deal **{deal_id}** criado como Rascunho.")
@@ -535,6 +583,7 @@ if page == "🆕  Nova Cotação":
                             notes=notes, incoterm=s_incoterm, payment_conditions=s_payment,
                             freight_cost=freight_cost, vat_rate=vat_rate,
                             availability=availability,
+                            company=company,
                         )
                         st.session_state["pending_email"] = {
                             "html_body":    html_body,

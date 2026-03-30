@@ -225,6 +225,7 @@ def generate_proposal(
     freight_cost: float = 0.0,
     vat_rate: float = 0.0,
     availability: str = "Ex-stock",
+    company: str = "",
 ) -> tuple[str, float, float]:
     """
     Gera um email HTML de proposta comercial.
@@ -289,6 +290,7 @@ Write a complete, professional B2B commercial proposal email in {lang_full}.
 
 RECIPIENT:
   Name: {client_name}
+  Company: {company or "—"}
   Email: {client_email}
   Country: {country}
   Deal Reference: {deal_id}
