@@ -781,13 +781,13 @@ elif page == "📋  Deals em Curso":
                             st.warning("Sem dados de produtos para editar.")
                         else:
                             with st.container(border=True):
-                                st.caption("✏️ Editar preços — altera Qty, Preço Cliente e/ou Margem por linha")
+                                st.caption("✏️ Editar preços — altera Qty e/ou Margem % por linha · Preço Cliente é calculado automaticamente")
                                 _vat_str_e  = str(deal.get("IVA", ""))
                                 _vat_rate_e = 0.23 if "23" in _vat_str_e else 0.0
                                 _freight_e  = float(deal.get("Frete (€)") or 0)
 
-                                eh = st.columns([0.7, 1.0, 1.4, 3.0, 1.3, 1.3, 1.3])
-                                for col, lbl in zip(eh, ["Qty","SKU","EAN","Produto","FC Final","Preço Cliente","Total"]):
+                                eh = st.columns([0.6, 1.0, 1.3, 2.8, 1.2, 1.2, 1.2, 1.2])
+                                for col, lbl in zip(eh, ["Qty","SKU","EAN","Produto","FC Final","Margem %","Preço Cliente","Total"]):
                                     col.caption(lbl)
 
                                 new_skus = {}
@@ -799,11 +799,14 @@ elif page == "📋  Deals em Curso":
                                     ean      = d.get("ean") or "—"
                                     name     = f"{d.get('brand','')} · {d.get('name','')}"
 
-                                    ec = st.columns([0.7, 1.0, 1.4, 3.0, 1.3, 1.3, 1.3])
+                                    # Margem gross atual: (pvp - fc) / pvp * 100
+                                    _cur_margin = round(((old_pvp - fc_final) / old_pvp * 100) if old_pvp > 0 else 0.0, 1)
+
+                                    ec = st.columns([0.6, 1.0, 1.3, 2.8, 1.2, 1.2, 1.2, 1.2])
                                     if f"eq_{did}_{sku}" not in st.session_state:
                                         st.session_state[f"eq_{did}_{sku}"] = old_qty
-                                    if f"ep_{did}_{sku}" not in st.session_state:
-                                        st.session_state[f"ep_{did}_{sku}"] = old_pvp
+                                    if f"em_{did}_{sku}" not in st.session_state:
+                                        st.session_state[f"em_{did}_{sku}"] = _cur_margin
 
                                     new_qty = ec[0].number_input("", min_value=1, step=1,
                                                                   key=f"eq_{did}_{sku}",
@@ -812,17 +815,23 @@ elif page == "📋  Deals em Curso":
                                     ec[2].markdown(f"`{ean}`")
                                     ec[3].markdown(name)
                                     ec[4].markdown(f"{fc_final:.2f} €")
-                                    new_pvp = ec[5].number_input("", min_value=0.0, step=0.5,
-                                                                  format="%.2f",
-                                                                  key=f"ep_{did}_{sku}",
-                                                                  label_visibility="collapsed")
-                                    ec[6].markdown(f"**{new_pvp * new_qty:.2f} €**")
+
+                                    new_margin_line = ec[5].number_input(
+                                        "", min_value=0.0, max_value=99.9, step=0.5,
+                                        format="%.1f", key=f"em_{did}_{sku}",
+                                        label_visibility="collapsed",
+                                        help="Margem bruta % — Preço Cliente é calculado automaticamente",
+                                    )
+
+                                    # pvp calculado da margem gross: pvp = fc / (1 - m/100)
+                                    new_pvp = round(fc_final / (1 - new_margin_line / 100), 4) if new_margin_line < 100 else fc_final
+                                    ec[6].markdown(f"**{new_pvp:.2f} €**")
+                                    ec[7].markdown(f"**{new_pvp * new_qty:.2f} €**")
 
                                     new_info = dict(info)
-                                    new_info["qty"] = new_qty
-                                    new_info["pvp"] = new_pvp
-                                    new_margin = ((new_pvp - fc_final) / new_pvp * 100) if new_pvp else 0
-                                    new_info["margin"] = round(new_margin, 2)
+                                    new_info["qty"]    = new_qty
+                                    new_info["pvp"]    = new_pvp
+                                    new_info["margin"] = round(new_margin_line, 2)
                                     new_skus[sku] = new_info
 
                                 # Totais
