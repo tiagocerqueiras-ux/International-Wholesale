@@ -23,6 +23,7 @@ from email_sender import create_draft, build_subject
 from client_tracker import (
     add_client, update_client, get_client, get_client_by_email,
     list_clients, count_clients, get_client_deals, bulk_import_clients,
+    find_duplicates, upsert_from_deal, sync_clients_from_deals,
     CLIENT_STATUSES, CLIENT_TYPES, MARKETS, BRANDS_LIST, CATEGORIES_LIST,
 )
 from auth_manager import (
@@ -253,6 +254,27 @@ if page == "🆕  Nova Cotação":
     c4, c5 = st.columns([3, 1])
     email    = c4.text_input("Email do cliente *", value=_crm_pre.get("email",""), placeholder="Ex: contact@geppit.eu")
     language = c5.selectbox("Língua", ["EN","PT","ES","FR"])
+
+    # ── Lookup automático no CRM ──────────────────────────────────────────────
+    if email and "@" in email:
+        _crm_match = get_client_by_email(email)
+        if _crm_match:
+            _cm = _crm_match
+            st.success(
+                f"✅ **Cliente encontrado no CRM** — "
+                f"{_cm.get('company_name','—')} · {_cm.get('country','—')} · "
+                f"{_cm.get('client_type','—')} · Status: {_cm.get('status','—')}"
+            )
+        else:
+            _dups = find_duplicates(company_name=company) if company else []
+            if _dups:
+                st.warning(
+                    f"⚠️ Email não encontrado mas existe empresa semelhante: "
+                    + " | ".join(f"{d.get('company_name')} ({d.get('contact_email','')})" for d in _dups[:3])
+                )
+            else:
+                st.info("🆕 Novo cliente — será criado no CRM ao guardar o deal.")
+
     notes = st.text_area("Notas / instruções adicionais para o email (opcional)", height=55,
         placeholder="Ex: desconto extra 2%, prazo especial...",
         help="Contexto adicional para personalizar o email gerado pelo Claude AI.")
@@ -577,8 +599,24 @@ if page == "🆕  Nova Cotação":
                                    salesperson_email=_cu.get("email",""),
                                    company=company)
 
+            # Auto-registar/enriquecer cliente no CRM
+            try:
+                _, _is_new_client = upsert_from_deal(
+                    contact_name = client,
+                    company_name = company,
+                    email        = email,
+                    country      = country,
+                    incoterm     = s_incoterm,
+                    payment      = s_payment,
+                )
+            except Exception:
+                _is_new_client = False
+
             if criar_deal:
-                st.success(f"✅ Deal **{deal_id}** criado como Rascunho.")
+                _msg = f"✅ Deal **{deal_id}** criado."
+                if _is_new_client:
+                    _msg += " Cliente adicionado ao CRM."
+                st.success(_msg)
                 _clear_state()
                 st.rerun()
 
@@ -1377,6 +1415,19 @@ elif page == "👥  CRM — Clientes":
         new_stat     = p4.selectbox("Status", CLIENT_STATUSES, key="new_stat")
         new_notes    = p5.text_area("Notas", height=80, key="new_notes")
 
+        # Verificação de duplicados em tempo real
+        if new_cemail or new_company or new_vat:
+            _pre_dups = find_duplicates(email=new_cemail, company_name=new_company, vat=new_vat)
+            if _pre_dups:
+                st.warning(
+                    "⚠️ **Possíveis duplicados encontrados:**  \n"
+                    + "\n".join(
+                        f"- **{d.get('company_name','—')}** · {d.get('contact_email','—')} "
+                        f"· {d.get('country','—')} · {d.get('status','—')}"
+                        for d in _pre_dups[:5]
+                    )
+                )
+
         if st.button("💾 Criar Cliente", type="primary", use_container_width=True, key="btn_new_client"):
             if not new_company or not new_country:
                 st.error("⚠️ Preenche pelo menos o **Nome da Empresa** e o **País**.")
@@ -1431,7 +1482,6 @@ elif page == "👥  CRM — Clientes":
 
                 if st.button("📥 Importar para CRM", type="primary", key="btn_import"):
                     rows = df_imp.where(pd.notnull(df_imp), None).to_dict("records")
-                    # Normalizar: arrays de texto para brands/categories se existirem
                     for r in rows:
                         for arr_col in ("brands", "categories"):
                             if arr_col in r and isinstance(r[arr_col], str):
@@ -1439,13 +1489,29 @@ elif page == "👥  CRM — Clientes":
                             elif arr_col not in r:
                                 r[arr_col] = []
                     with st.spinner(f"A importar {len(rows)} clientes..."):
-                        ok_n, err_n = bulk_import_clients(rows)
-                    st.success(f"✅ {ok_n} clientes importados.")
+                        ok_n, upd_n, err_n = bulk_import_clients(rows)
+                    st.success(f"✅ {ok_n} novos clientes criados · {upd_n} actualizados.")
                     if err_n:
                         st.warning(f"⚠️ {err_n} erros.")
                     st.rerun()
             except Exception as e:
                 st.error(f"Erro ao ler ficheiro: {e}")
+
+        st.markdown("---")
+        st.subheader("🔄 Sincronizar Deals → CRM")
+        st.markdown(
+            "Cria ou enriquece automaticamente as entradas de clientes com base em todos os deals "
+            "existentes. Para emails já na BD, apenas preenche campos em falta — **nunca sobrescreve**."
+        )
+        if st.button("🔄 Sincronizar agora", key="btn_sync_deals", type="secondary"):
+            with st.spinner("A sincronizar deals com o CRM..."):
+                _s_created, _s_existing = sync_clients_from_deals()
+            st.success(
+                f"✅ Sincronização concluída — "
+                f"**{_s_created}** novos clientes criados · "
+                f"**{_s_existing}** já existiam (enriquecidos se necessário)."
+            )
+            st.rerun()
 
         st.markdown("---")
         st.caption(f"Total de clientes na base de dados: **{count_clients()}**")

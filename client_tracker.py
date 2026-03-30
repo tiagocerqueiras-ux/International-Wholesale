@@ -138,26 +138,165 @@ def get_client_deals(client_email: str) -> list:
         return []
 
 
-def bulk_import_clients(rows: list[dict]) -> tuple[int, int]:
+def find_duplicates(
+    email: str = "",
+    company_name: str = "",
+    vat: str = "",
+) -> list:
     """
-    Importação em massa. Cada dict deve ter pelo menos 'company_name' e 'country'.
-    Devolve (inseridos, erros).
+    Procura possíveis duplicados por email (exacto), nome empresa (fuzzy) ou VAT.
+    Devolve lista de dicts com os campos básicos do cliente encontrado.
     """
-    ok = err = 0
+    results  = []
+    seen_ids = set()
+    db = _get_client()
+    _fields = "id,company_name,contact_name,contact_email,country,status,client_type"
+
+    if email and email.strip():
+        res = db.table("clients").select(_fields).ilike("contact_email", email.strip()).execute()
+        for r in (res.data or []):
+            if r["id"] not in seen_ids:
+                results.append(r); seen_ids.add(r["id"])
+
+    if company_name and company_name.strip():
+        res = (db.table("clients").select(_fields)
+               .ilike("company_name", f"%{company_name.strip()}%").limit(5).execute())
+        for r in (res.data or []):
+            if r["id"] not in seen_ids:
+                results.append(r); seen_ids.add(r["id"])
+
+    if vat and vat.strip():
+        res = db.table("clients").select(_fields).eq("vat", vat.strip()).execute()
+        for r in (res.data or []):
+            if r["id"] not in seen_ids:
+                results.append(r); seen_ids.add(r["id"])
+
+    return results
+
+
+def upsert_from_deal(
+    contact_name: str,
+    company_name: str,
+    email: str,
+    country: str,
+    incoterm: str = "",
+    payment: str = "",
+) -> tuple[str, bool]:
+    """
+    Cria ou enriquece cliente a partir dos dados de um deal.
+    - Se o email já existe na BD: preenche apenas campos em falta (não sobrescreve).
+    - Se não existe: cria novo registo com os dados disponíveis.
+    Devolve (id, True se criado / False se já existia).
+    """
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    existing = get_client_by_email(email) if email else None
+
+    if existing:
+        # Enriquecer apenas campos vazios — nunca sobrescrever dados existentes
+        updates = {"updated_at": now}
+        def _fill(field, value):
+            if value and not existing.get(field):
+                updates[field] = value
+        _fill("contact_name",  contact_name)
+        _fill("company_name",  company_name)
+        _fill("country",       country)
+        _fill("incoterm",      incoterm)
+        _fill("payment_terms", payment)
+        if len(updates) > 1:
+            _get_client().table("clients").update(updates).eq("id", existing["id"]).execute()
+        return str(existing["id"]), False
+    else:
+        cid = add_client({
+            "company_name":  company_name or contact_name or "—",
+            "contact_name":  contact_name,
+            "contact_email": email,
+            "country":       country,
+            "incoterm":      incoterm,
+            "payment_terms": payment,
+            "status":        "Ativo",
+            "market":        "EU",
+            "client_type":   "Distribuidor",
+            "brands":        [],
+            "categories":    [],
+        })
+        return cid, True
+
+
+def sync_clients_from_deals() -> tuple[int, int]:
+    """
+    Cria entradas no CRM para todos os deals sem cliente correspondente.
+    Para deals com email já existente, enriquece os campos em falta.
+    Devolve (criados, já_existiam).
+    """
+    try:
+        res = _get_client().table("deals").select(
+            "client,company,client_email,country,incoterm,payment_conditions"
+        ).execute()
+        created = skipped = 0
+        for d in (res.data or []):
+            em = (d.get("client_email") or "").strip()
+            if not em:
+                skipped += 1
+                continue
+            _, is_new = upsert_from_deal(
+                contact_name = d.get("client", ""),
+                company_name = d.get("company", ""),
+                email        = em,
+                country      = d.get("country", ""),
+                incoterm     = d.get("incoterm", ""),
+                payment      = d.get("payment_conditions", ""),
+            )
+            if is_new:
+                created += 1
+            else:
+                skipped += 1
+        return created, skipped
+    except Exception as e:
+        print(f"[client_tracker] sync_clients_from_deals erro: {e}")
+        return 0, 0
+
+
+def bulk_import_clients(rows: list[dict]) -> tuple[int, int, int]:
+    """
+    Importação em massa com detecção de duplicados.
+    - Se o email já existe: enriquece campos em falta (não duplica).
+    - Se não existe: cria novo.
+    Devolve (criados, actualizados, erros).
+    """
+    created = updated = err = 0
     for row in rows:
         try:
-            row.setdefault("status", "Ativo")
-            row.setdefault("market", "EU")
-            row.setdefault("client_type", "Distribuidor")
-            row.setdefault("currency", "EUR")
-            row.setdefault("brands", [])
-            row.setdefault("categories", [])
-            row["created_at"] = now
-            row["updated_at"] = now
-            _get_client().table("clients").insert(row).execute()
-            ok += 1
+            email   = (row.get("contact_email") or "").strip()
+            company = (row.get("company_name")  or "").strip()
+            existing = get_client_by_email(email) if email else None
+            if not existing and company:
+                dups = find_duplicates(company_name=company)
+                if dups:
+                    existing = dups[0]
+            if existing:
+                now   = datetime.now().strftime("%Y-%m-%d %H:%M")
+                patch = {"updated_at": now}
+                for field in ("company_name","legal_name","vat","country","market",
+                              "address","zip_code","city","contact_name","contact_role",
+                              "contact_phone","contact_linkedin","client_type",
+                              "incoterm","payment_terms","notes"):
+                    if row.get(field) and not existing.get(field):
+                        patch[field] = row[field]
+                if len(patch) > 1:
+                    _get_client().table("clients").update(patch).eq("id", existing["id"]).execute()
+                updated += 1
+            else:
+                row.setdefault("status", "Ativo")
+                row.setdefault("market", "EU")
+                row.setdefault("client_type", "Distribuidor")
+                row.setdefault("currency", "EUR")
+                row.setdefault("brands", [])
+                row.setdefault("categories", [])
+                now = datetime.now().strftime("%Y-%m-%d %H:%M")
+                row["created_at"] = row["updated_at"] = now
+                _get_client().table("clients").insert(row).execute()
+                created += 1
         except Exception as e:
             print(f"[client_tracker] bulk_import erro: {e}")
             err += 1
-    return ok, err
+    return created, updated, err
