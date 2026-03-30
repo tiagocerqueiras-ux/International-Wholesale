@@ -100,7 +100,7 @@ def list_clients(
 ) -> list:
     try:
         q = _get_client().table("clients").select(
-            "id,company_name,country,market,contact_email,contact_phone,"
+            "id,company_name,country,market,contact_name,contact_email,contact_phone,"
             "client_type,status,brands,categories,incoterm,payment_terms,"
             "notes,created_at,updated_at"
         ).order("company_name")
@@ -503,6 +503,154 @@ def merge_clients(primary_id: str, secondary_id: str) -> bool:
         return False
 
 
+# ── Múltiplos Contactos ────────────────────────────────────────────────────────
+
+CONTACT_ROLES = [
+    "Compras / Procurement", "Diretor Comercial", "CEO / Owner",
+    "Financeiro / Finance", "Logística / Logistics", "Marketing",
+    "Responsável de Conta", "Técnico / IT", "Outro",
+]
+
+
+def get_contacts(client_id: str) -> list:
+    """
+    Devolve a lista de contactos de um cliente.
+    Se contacts JSONB estiver vazio, auto-migra o contacto principal existente.
+    Garante que sempre existe exatamente 1 contacto marcado como primary.
+    """
+    client = get_client(client_id)
+    if not client:
+        return []
+
+    contacts = client.get("contacts") or []
+
+    # Auto-migração: se não há contactos mas existem campos individuais
+    if not contacts:
+        name  = client.get("contact_name", "").strip()
+        email = client.get("contact_email", "").strip()
+        if name or email:
+            contacts = [{
+                "name":      name,
+                "role":      client.get("contact_role", ""),
+                "email":     email,
+                "phone":     client.get("contact_phone", ""),
+                "linkedin":  client.get("contact_linkedin", ""),
+                "primary":   True,
+                "notes":     "",
+            }]
+            # Persistir a migração
+            _get_client().table("clients").update({"contacts": contacts}).eq("id", client_id).execute()
+
+    # Garantir que há sempre um primary
+    has_primary = any(c.get("primary") for c in contacts)
+    if contacts and not has_primary:
+        contacts[0]["primary"] = True
+        _get_client().table("clients").update({"contacts": contacts}).eq("id", client_id).execute()
+
+    return contacts
+
+
+def save_contacts(client_id: str, contacts: list) -> bool:
+    """
+    Guarda a lista de contactos e sincroniza os campos individuais
+    com o contacto marcado como primary.
+    """
+    if not contacts:
+        return update_client(client_id, {"contacts": []})
+
+    # Garantir exatamente 1 primary
+    primaries = [i for i, c in enumerate(contacts) if c.get("primary")]
+    if not primaries:
+        contacts[0]["primary"] = True
+    elif len(primaries) > 1:
+        for i, c in enumerate(contacts):
+            c["primary"] = (i == primaries[0])
+
+    # Sincronizar campos individuais com o primary
+    primary = next((c for c in contacts if c.get("primary")), contacts[0])
+    patch = {
+        "contacts":         contacts,
+        "contact_name":     primary.get("name", ""),
+        "contact_role":     primary.get("role", ""),
+        "contact_email":    primary.get("email", ""),
+        "contact_phone":    primary.get("phone", ""),
+        "contact_linkedin": primary.get("linkedin", ""),
+        "updated_at":       datetime.now().strftime("%Y-%m-%d %H:%M"),
+    }
+    try:
+        _get_client().table("clients").update(patch).eq("id", client_id).execute()
+        return True
+    except Exception as e:
+        print(f"[client_tracker] save_contacts erro: {e}")
+        return False
+
+
+def enrich_brands_from_deals(client_email: str) -> dict:
+    """
+    Analisa o histórico de deals do cliente e extrai marcas e categorias
+    a partir dos SKUs encontrados nos deals (campo sku_ids).
+    Devolve {"brands_added": int, "categories_added": int}.
+    """
+    from sku_lookup import build_cache
+
+    if not client_email:
+        return {"brands_added": 0, "categories_added": 0}
+
+    client = get_client_by_email(client_email)
+    if not client:
+        return {"brands_added": 0, "categories_added": 0}
+
+    # Carregar cache de SKUs
+    try:
+        cache = build_cache()
+    except Exception:
+        cache = {}
+
+    # Buscar deals com sku_ids
+    try:
+        res = (_get_client().table("deals")
+               .select("sku_ids")
+               .ilike("client_email", client_email)
+               .execute())
+        deals_raw = res.data or []
+    except Exception:
+        deals_raw = []
+
+    found_brands:     set = set()
+    found_categories: set = set()
+
+    _brands_upper = {b.upper(): b for b in BRANDS_LIST}  # lookup rápido
+
+    for deal in deals_raw:
+        sku_ids_str = (deal.get("sku_ids") or "").strip()
+        if not sku_ids_str:
+            continue
+        # sku_ids é armazenado como "SKU1, SKU2, SKU3"
+        for sku_code in [s.strip() for s in sku_ids_str.split(",") if s.strip()]:
+            sku_info = cache.get(str(sku_code), {})
+            brand = (sku_info.get("brand") or "").strip().upper()
+            cat   = (sku_info.get("cat") or "").strip().upper()
+            matched_brand = _brands_upper.get(brand)
+            if matched_brand:
+                found_brands.add(matched_brand)
+            if cat and cat in CATEGORIES_LIST:
+                found_categories.add(cat)
+
+    # União com existentes
+    existing_brands = set(client.get("brands") or [])
+    existing_cats   = set(client.get("categories") or [])
+    new_brands      = found_brands - existing_brands
+    new_cats        = found_categories - existing_cats
+
+    if new_brands or new_cats:
+        update_client(str(client["id"]), {
+            "brands":     sorted(existing_brands | found_brands),
+            "categories": sorted(existing_cats   | found_categories),
+        })
+
+    return {"brands_added": len(new_brands), "categories_added": len(new_cats)}
+
+
 def auto_enrich_clients() -> dict:
     """
     Enriquece automaticamente campos deriváveis:
@@ -542,3 +690,228 @@ def auto_enrich_clients() -> dict:
             unchanged += 1
 
     return {"updated": updated, "unchanged": unchanged}
+
+
+# ── KPIs de Performance ────────────────────────────────────────────────────────
+
+def get_client_kpis(client_email: str) -> dict:
+    """
+    Agrega KPIs de performance a partir do histórico de deals do cliente.
+    Devolve: total_revenue, avg_margin, deal_count, closed_deals,
+             active_deals, last_deal_date, active_pipeline_value.
+    """
+    try:
+        res = (_get_client().table("deals")
+               .select("deal_id,created_at,status,proposed_value,margin_pct")
+               .ilike("client_email", client_email)
+               .execute())
+        deals = res.data or []
+    except Exception:
+        deals = []
+
+    total_revenue      = 0.0
+    active_pipeline    = 0.0
+    margins_closed     = []
+    closed_deals       = 0
+    active_deals       = 0
+    last_deal_date     = None
+
+    _active_statuses   = {"Rascunho","Enviado","Em Negociação","Follow-up"}
+    _closed_statuses   = {"Fechado"}
+
+    for d in deals:
+        val    = float(d.get("proposed_value") or 0)
+        pct    = float(d.get("margin_pct") or 0)
+        status = d.get("status","")
+        date   = (d.get("created_at") or "")[:10]
+
+        if status in _closed_statuses:
+            total_revenue += val
+            closed_deals  += 1
+            if pct > 0:
+                margins_closed.append(pct)
+        elif status in _active_statuses:
+            active_deals    += 1
+            active_pipeline += val
+
+        if date and (last_deal_date is None or date > last_deal_date):
+            last_deal_date = date
+
+    avg_margin = round(sum(margins_closed) / len(margins_closed), 1) if margins_closed else 0.0
+
+    return {
+        "total_revenue":    round(total_revenue, 2),
+        "avg_margin":       avg_margin,
+        "deal_count":       len(deals),
+        "closed_deals":     closed_deals,
+        "active_deals":     active_deals,
+        "active_pipeline":  round(active_pipeline, 2),
+        "last_deal_date":   last_deal_date or "—",
+    }
+
+
+# ── Segmentação Inteligente ────────────────────────────────────────────────────
+
+def smart_segment(
+    brands: list = None,
+    categories: list = None,
+    market: str = None,
+    client_type: str = None,
+    status_filter: str = "Ativo",
+    min_deals: int = 0,
+) -> list:
+    """
+    Rankeia clientes por fit comercial para uma proposta/produto dado.
+    Fit Score (0–100):
+      - Sobreposição de marcas:     até 40 pontos
+      - Sobreposição de categorias: até 30 pontos
+      - Atividade (tem deals):      até 20 pontos
+      - Match de mercado:           10 pontos
+    Devolve lista de dicts ordenada por fit_score desc.
+    """
+    brands     = [b.upper() for b in (brands or [])]
+    categories = [c.upper() for c in (categories or [])]
+
+    try:
+        q = _get_client().table("clients").select(
+            "id,company_name,country,market,contact_name,contact_email,"
+            "client_type,status,brands,categories,incoterm,payment_terms,notes"
+        )
+        if status_filter:
+            q = q.eq("status", status_filter)
+        if market:
+            q = q.eq("market", market)
+        if client_type:
+            q = q.eq("client_type", client_type)
+        clients_all = q.execute().data or []
+    except Exception:
+        return []
+
+    # Actividade por email (1 query para todos)
+    deal_counts: dict = {}
+    try:
+        res_d = _get_client().table("deals").select("client_email").execute()
+        for row in (res_d.data or []):
+            em = (row.get("client_email") or "").lower().strip()
+            if em:
+                deal_counts[em] = deal_counts.get(em, 0) + 1
+    except Exception:
+        pass
+
+    results = []
+    for c in clients_all:
+        c_brands = [b.upper() for b in (c.get("brands") or [])]
+        c_cats   = [x.upper() for x in (c.get("categories") or [])]
+        c_market = (c.get("market") or "").strip()
+        c_email  = (c.get("contact_email") or "").lower().strip()
+        n_deals  = deal_counts.get(c_email, 0)
+
+        if n_deals < min_deals:
+            continue
+
+        # Brand score
+        if brands:
+            brand_matches = len(set(brands) & set(c_brands))
+            brand_score   = round(min(40, brand_matches / len(brands) * 40))
+        else:
+            brand_score = 20  # neutro se não há filtro
+
+        # Category score
+        if categories:
+            cat_matches = len(set(categories) & set(c_cats))
+            cat_score   = round(min(30, cat_matches / len(categories) * 30))
+        else:
+            cat_score = 15  # neutro
+
+        # Activity score
+        if n_deals > 5:
+            activity_score = 20
+        elif n_deals > 0:
+            activity_score = 10
+        else:
+            activity_score = 0
+
+        # Market score
+        market_score = 10 if (not market or c_market == market) else 0
+
+        fit_score = brand_score + cat_score + activity_score + market_score
+
+        results.append({
+            **c,
+            "fit_score":  fit_score,
+            "n_deals":    n_deals,
+            "brand_score":    brand_score,
+            "cat_score":      cat_score,
+            "activity_score": activity_score,
+        })
+
+    results.sort(key=lambda x: x["fit_score"], reverse=True)
+    return results
+
+
+# ── Documentos KYC ─────────────────────────────────────────────────────────────
+
+def get_client_documents(client_id: str) -> list:
+    """Devolve a lista de documentos JSONB do cliente."""
+    c = get_client(client_id)
+    return (c or {}).get("documents") or []
+
+
+def add_client_document(
+    client_id: str,
+    name: str,
+    doc_type: str,
+    url: str = "",
+    notes: str = "",
+    file_bytes: bytes = None,
+    filename_storage: str = "",
+) -> bool:
+    """
+    Adiciona um documento ao cliente.
+    Se file_bytes estiver presente, faz upload para Supabase Storage
+    (bucket: client-docs) e guarda a URL pública.
+    Caso contrário, guarda apenas os metadados (URL manual).
+    """
+    from datetime import datetime as _dt
+    now = _dt.now().strftime("%Y-%m-%d %H:%M")
+
+    storage_url = url  # default: URL manual
+
+    if file_bytes and filename_storage:
+        try:
+            _path = f"clients/{client_id}/{filename_storage}"
+            _db().storage.from_("client-docs").upload(
+                _path, file_bytes,
+                file_options={"content-type": "application/octet-stream", "upsert": "true"}
+            )
+            storage_url = _db().storage.from_("client-docs").get_public_url(_path)
+        except Exception as e:
+            print(f"[client_tracker] Storage upload erro: {e}")
+            # Continua mesmo sem upload — guarda só metadados
+
+    docs = get_client_documents(client_id)
+    docs.append({
+        "name":        name,
+        "type":        doc_type,
+        "url":         storage_url,
+        "notes":       notes,
+        "uploaded_at": now,
+    })
+    return update_client(client_id, {"documents": docs})
+
+
+def delete_client_document(client_id: str, doc_index: int) -> bool:
+    """Remove o documento na posição doc_index da lista."""
+    docs = get_client_documents(client_id)
+    if doc_index < 0 or doc_index >= len(docs):
+        return False
+    _doc = docs[doc_index]
+    # Tentar apagar do Storage se tiver URL interna
+    if _doc.get("url") and "client-docs" in _doc.get("url",""):
+        try:
+            _path = f"clients/{client_id}/{_doc['name']}"
+            _db().storage.from_("client-docs").remove([_path])
+        except Exception:
+            pass
+    docs.pop(doc_index)
+    return update_client(client_id, {"documents": docs})

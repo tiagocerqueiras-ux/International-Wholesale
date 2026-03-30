@@ -33,30 +33,40 @@ ROLE_BADGE_COLOR = {
 # Chaves têm de corresponder ao texto exato dos botões de nav em app.py
 PAGES_BY_ROLE = {
     "owner": [
+        "📊  Dashboard",
         "🆕  Nova Cotação",
         "📋  Deals em Curso",
         "👥  CRM — Clientes",
+        "🤝  Fornecedores",
         "🏭  Pedido Fornecedor",
         "🔍  Pesquisar Produto",
+        "🚚  Logística",
         "⚙️  Administração",
     ],
     "comercial_interno": [
+        "📊  Dashboard",
         "🆕  Nova Cotação",
         "📋  Deals em Curso",
         "👥  CRM — Clientes",
+        "🤝  Fornecedores",
         "🏭  Pedido Fornecedor",
         "🔍  Pesquisar Produto",
+        "🚚  Logística",
     ],
     "contractor": [
         "🆕  Nova Cotação",
         "📋  Deals em Curso",
         "👥  CRM — Clientes",
+        "🤝  Fornecedores",
         "🔍  Pesquisar Produto",
+        "🚚  Logística",
     ],
     "administrativa": [
         "📋  Deals em Curso",
         "👥  CRM — Clientes",
+        "🤝  Fornecedores",
         "🔍  Pesquisar Produto",
+        "🚚  Logística",
     ],
 }
 

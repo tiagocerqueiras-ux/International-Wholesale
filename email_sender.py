@@ -16,6 +16,7 @@ def send_email(
     html_body: str,
     reply_to: str = None,
     cc: list = None,
+    bcc: list = None,
 ) -> tuple[bool, str]:
     """
     Envia email HTML via Resend SDK.
@@ -42,6 +43,8 @@ def send_email(
     }
     if cc:
         params["cc"] = cc
+    if bcc:
+        params["bcc"] = bcc
 
     try:
         result = resend.Emails.send(params)
@@ -54,8 +57,15 @@ def send_email(
 
 
 # Alias para compatibilidade com chamadas create_draft em app.py
-def create_draft(to: str, subject: str, html_body: str, send: bool = False) -> tuple[bool, str]:
-    return send_email(to=to, subject=subject, html_body=html_body)
+def create_draft(
+    to: str,
+    subject: str,
+    html_body: str,
+    send: bool = False,
+    cc: list = None,
+    bcc: list = None,
+) -> tuple[bool, str]:
+    return send_email(to=to, subject=subject, html_body=html_body, cc=cc, bcc=bcc)
 
 
 def build_subject(deal_id: str, client_name: str, language: str = "EN", company: str = "") -> str:

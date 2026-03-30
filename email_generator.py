@@ -9,6 +9,7 @@ Funções principais:
 """
 
 import base64
+import html as _html
 import anthropic
 from pathlib import Path
 from config import (
@@ -177,12 +178,13 @@ def _build_product_table_html(skus_data: dict, language: str = "EN") -> str:
 
     rows_html = ""
     for i, (sku, info) in enumerate(skus_data.items()):
-        d      = info.get("data") or {}
-        qty    = int(info.get("qty") or 1)
-        pvp    = info.get("pvp") or 0.0
-        ean    = d.get("ean") or "N/A"
-        name   = d.get("name", sku)
-        brand  = d.get("brand") or "N/A"
+        d        = info.get("data") or {}
+        qty      = int(info.get("qty") or 1)
+        pvp      = info.get("pvp") or 0.0
+        sku_safe = _html.escape(str(sku))
+        ean      = _html.escape(str(d.get("ean") or "N/A"))
+        name     = _html.escape(str(d.get("name") or sku))
+        brand    = _html.escape(str(d.get("brand") or "N/A"))
         pvp_pt = d.get("pvp_pt")
         pvp_pt_str = f"{pvp_pt:.2f}" if pvp_pt is not None else "N/A"
         total  = round(pvp * qty, 2)
@@ -196,7 +198,7 @@ def _build_product_table_html(skus_data: dict, language: str = "EN") -> str:
         rows_html += (
             f'<tr>'
             f'<td style="{_td}">{ean}</td>'
-            f'<td style="{_td}">{sku}</td>'
+            f'<td style="{_td}">{sku_safe}</td>'
             f'<td style="{_tdl}">{name}</td>'
             f'<td style="{_td}">{brand}</td>'
             f'<td style="{_td}">{pvp_pt_str}</td>'
@@ -477,6 +479,8 @@ Return ONLY raw HTML — no markdown fences.
         messages=[{"role": "user", "content": prompt}]
     )
 
+    if not response.content:
+        raise ValueError("Claude API retornou resposta vazia — tenta novamente.")
     html_body = response.content[0].text.strip()
 
     import re as _re
@@ -643,6 +647,8 @@ Return ONLY the HTML email body (no html/head/body tags).
         max_tokens=800,
         messages=[{"role": "user", "content": prompt}]
     )
+    if not response.content:
+        raise ValueError("Claude API retornou resposta vazia — tenta novamente.")
     return _wrap_html(response.content[0].text)
 
 
@@ -792,15 +798,21 @@ def generate_supplier_request(
     so_manual: dict,
     vat_rate: float = 0.0,
     ref: str = "",
+    target_margin: float = 0.0,
+    pvp_alvo_map: dict = None,
 ) -> str:
     """
     Gera um documento HTML de pedido de cotação/aprovação para o fornecedor.
-    Colunas: Qty / SKU / EAN / Produto / FC Simulador / SO Negoc. / FC Final
+    Colunas base: Qty / SKU / EAN / Produto / FC Simulador / SO Negoc. / FC Final
+    Colunas adicionais (se pvp_alvo_map preenchido):
+      PVP Alvo (€) / Apoio Adicional Solicitado (€) / FC Alvo / FC Alvo Total
     Sem Claude — gerado 100% em Python.
     """
     from datetime import datetime as _dt
     now_str  = _dt.now().strftime("%d/%m/%Y %H:%M")
     ref_line = f"Ref: {ref}" if ref else ""
+    pvp_alvo_map = pvp_alvo_map or {}
+    has_apoio = any(v > 0 for v in pvp_alvo_map.values()) and target_margin > 0
 
     logo_src = _logo_b64()
     logo_tag = (f'<img src="{logo_src}" alt="Worten" style="max-height:48px;display:inline-block;">'
@@ -809,6 +821,8 @@ def generate_supplier_request(
 
     rows_html = ""
     total_qty = 0
+    grand_apoio = 0.0
+
     for i, (sku, info) in enumerate(skus_data.items()):
         d         = info.get("data") or {}
         qty       = int(info.get("qty") or 1)
@@ -826,11 +840,13 @@ def generate_supplier_request(
 
         so_neg       = float(so_manual.get(sku, info.get("so_neg", 0.0)))
         fc_final     = round(fc_sim - so_neg, 4) if fc_sim is not None else None
-        fc_sim_str   = "—" if fc_sim is None else "{:.4f}".format(fc_sim)
-        fc_final_str = "—" if fc_final is None else "{:.4f}".format(fc_final)
+        fc_sim_str   = "—" if fc_sim is None else f"{fc_sim:.4f}"
+        fc_final_str = "—" if fc_final is None else f"{fc_final:.4f}"
 
         bg = "#f5f5f5" if i % 2 == 0 else "#ffffff"
-        rows_html += (
+
+        # Colunas base
+        row = (
             f'<tr style="background:{bg};">'
             f'<td style="text-align:center;">{qty}</td>'
             f'<td style="text-align:center;font-family:monospace;">{sku}</td>'
@@ -839,9 +855,66 @@ def generate_supplier_request(
             f'<td style="text-align:center;">{fc_sim_str}</td>'
             f'<td style="text-align:center;color:#CC0000;font-weight:600;">{so_neg:.2f}</td>'
             f'<td style="text-align:center;font-weight:700;">{fc_final_str}</td>'
-            f'</tr>'
         )
+
+        # Colunas de Apoio Adicional (só se configurado)
+        if has_apoio:
+            pvp_alvo = pvp_alvo_map.get(sku, 0.0)
+            if pvp_alvo > 0 and fc_sim is not None and target_margin > 0:
+                fc_max        = round(pvp_alvo * (1 - target_margin / 100), 4)
+                apoio_adic    = round(max(0.0, fc_final - fc_max), 4) if fc_final is not None else 0.0
+                fc_alvo       = round(fc_final - apoio_adic, 4) if fc_final is not None else None
+                fc_alvo_total = round(fc_alvo * qty, 2) if fc_alvo is not None else None
+                grand_apoio  += apoio_adic * qty
+                _apoio_color  = "#007700" if apoio_adic > 0 else "#999"
+                _apoio_lbl    = f"+{apoio_adic:.4f}" if apoio_adic > 0 else "0.0000"
+                _fc_alvo_str  = f"{fc_alvo:.4f}" if fc_alvo is not None else "—"
+                _fc_tot_str   = f"{fc_alvo_total:.2f}" if fc_alvo_total is not None else "—"
+            else:
+                _apoio_color  = "#999"
+                _apoio_lbl    = "—"
+                _fc_alvo_str  = "—"
+                _fc_tot_str   = "—"
+                pvp_alvo      = 0.0
+
+            row += (
+                f'<td style="text-align:center;">'
+                f'{"—" if pvp_alvo == 0 else f"{pvp_alvo:.2f}"}</td>'
+                f'<td style="text-align:center;color:{_apoio_color};font-weight:700;">{_apoio_lbl}</td>'
+                f'<td style="text-align:center;font-weight:700;">{_fc_alvo_str}</td>'
+                f'<td style="text-align:center;">{_fc_tot_str}</td>'
+            )
+
+        row += '</tr>'
+        rows_html += row
         total_qty += qty
+
+    # Cabeçalho da tabela
+    if has_apoio:
+        thead = (
+            '<tr>'
+            '<th>Qty</th><th>SKU</th><th>EAN</th><th class="lft">Produto</th>'
+            '<th>FC Simulador</th><th>SO Negoc. (€)</th><th>FC Final</th>'
+            f'<th>PVP Alvo (€)</th>'
+            f'<th>Apoio Adic. Solicitado (€)</th>'
+            f'<th>FC Alvo Unit.</th><th>FC Alvo Total (€)</th>'
+            '</tr>'
+        )
+        apoio_note = (
+            f'<div class="note" style="border-color:#007700;background:#f0fff4;">'
+            f'⚠️ <strong>Apoio Adicional Total Solicitado ao Fornecedor: '
+            f'{grand_apoio:,.2f} €</strong> — '
+            f'calculado para atingir margem alvo de <strong>{target_margin:.1f}%</strong> '
+            f'aos PVP indicados.</div>'
+        )
+    else:
+        thead = (
+            '<tr>'
+            '<th>Qty</th><th>SKU</th><th>EAN</th><th class="lft">Produto</th>'
+            '<th>FC Simulador</th><th>SO Negoc. (€)</th><th>FC Final</th>'
+            '</tr>'
+        )
+        apoio_note = ""
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
@@ -875,13 +948,10 @@ def generate_supplier_request(
   Este documento destina-se a validação interna de custos e negociação de Apoio Sell-Out (SO) com o fornecedor antes da emissão de proposta ao cliente.
 </div>
 
+{apoio_note}
+
 <table>
-  <thead>
-    <tr>
-      <th>Qty</th><th>SKU</th><th>EAN</th><th class="lft">Produto</th>
-      <th>FC Simulador</th><th>SO Negoc. (€)</th><th>FC Final</th>
-    </tr>
-  </thead>
+  <thead>{thead}</thead>
   <tbody>{rows_html}
   </tbody>
 </table>
@@ -891,3 +961,239 @@ def generate_supplier_request(
   {USER_NAME} &nbsp;·&nbsp; {USER_EMAIL} &nbsp;·&nbsp; {USER_PHONE}
 </div>
 </body></html>"""
+
+
+def generate_expedition_confirmation(
+    deal: dict,
+    carrier: str = "",
+    cmr_number: str = "",
+    tracking: str = "",
+    estimated_delivery: str = "",
+    language: str = "EN",
+) -> str:
+    """
+    Gera email HTML de confirmação de expedição para o cliente.
+    100% Python — sem Claude.
+    """
+    from datetime import datetime
+    from config import USER_NAME, USER_TITLE, USER_EMAIL, USER_PHONE, COMPANY_NAME
+
+    deal_id  = deal.get("Deal ID") or deal.get("deal_id", "")
+    client   = deal.get("Cliente") or deal.get("client", "")
+    country  = deal.get("País") or deal.get("country", "")
+    skus_raw = deal.get("_skus_detail") or {}
+    now_str  = datetime.now().strftime("%d/%m/%Y")
+    logo     = _logo_b64()
+
+    # Language strings
+    _strings = {
+        "EN": {
+            "subject_line":  f"Shipment Confirmation — Order {deal_id}",
+            "intro":         f"Dear {client},",
+            "body1":         f"We are pleased to inform you that your order <strong>{deal_id}</strong> has been dispatched and is on its way to you.",
+            "carrier_lbl":   "Carrier / Transport Company",
+            "cmr_lbl":       "CMR / Waybill No.",
+            "tracking_lbl":  "Tracking Reference",
+            "eta_lbl":       "Estimated Delivery",
+            "products_hdr":  "Shipped Products",
+            "col_sku":       "SKU", "col_ean": "EAN",
+            "col_product":   "Product", "col_qty": "Qty",
+            "closing":       "Kind regards,",
+            "footer_note":   "For any queries, please do not hesitate to contact us.",
+        },
+        "PT": {
+            "subject_line":  f"Confirmação de Expedição — Encomenda {deal_id}",
+            "intro":         f"Caro/a {client},",
+            "body1":         f"É com prazer que informamos que a sua encomenda <strong>{deal_id}</strong> foi expedida e está a caminho.",
+            "carrier_lbl":   "Transportadora",
+            "cmr_lbl":       "CMR / Guia de Transporte Nº",
+            "tracking_lbl":  "Referência de Rastreio",
+            "eta_lbl":       "Entrega Prevista",
+            "products_hdr":  "Produtos Expedidos",
+            "col_sku":       "SKU", "col_ean":     "EAN",
+            "col_product":   "Produto", "col_qty": "Qtd.",
+            "closing":       "Com os melhores cumprimentos,",
+            "footer_note":   "Para qualquer questão, não hesite em contactar-nos.",
+        },
+        "ES": {
+            "subject_line":  f"Confirmación de Envío — Pedido {deal_id}",
+            "intro":         f"Estimado/a {client},",
+            "body1":         f"Nos complace informarle que su pedido <strong>{deal_id}</strong> ha sido enviado y está en camino.",
+            "carrier_lbl":   "Transportista",
+            "cmr_lbl":       "CMR / Carta de Porte Nº",
+            "tracking_lbl":  "Referencia de Seguimiento",
+            "eta_lbl":       "Entrega Estimada",
+            "products_hdr":  "Productos Enviados",
+            "col_sku":       "SKU", "col_ean":     "EAN",
+            "col_product":   "Producto", "col_qty": "Cant.",
+            "closing":       "Atentamente,",
+            "footer_note":   "Para cualquier consulta, no dude en ponerse en contacto con nosotros.",
+        },
+        "FR": {
+            "subject_line":  f"Confirmation d'Expédition — Commande {deal_id}",
+            "intro":         f"Cher/Chère {client},",
+            "body1":         f"Nous avons le plaisir de vous informer que votre commande <strong>{deal_id}</strong> a été expédiée et est en route.",
+            "carrier_lbl":   "Transporteur",
+            "cmr_lbl":       "CMR / Lettre de Voiture Nº",
+            "tracking_lbl":  "Référence de Suivi",
+            "eta_lbl":       "Livraison Estimée",
+            "products_hdr":  "Produits Expédiés",
+            "col_sku":       "SKU", "col_ean":     "EAN",
+            "col_product":   "Produit", "col_qty":  "Qté",
+            "closing":       "Cordialement,",
+            "footer_note":   "Pour toute question, n'hésitez pas à nous contacter.",
+        },
+    }
+    lang = language.upper() if language else "EN"
+    s    = _strings.get(lang, _strings["EN"])
+
+    # Shipment info rows
+    info_rows = ""
+    def _info_row(label, value):
+        if not value:
+            return ""
+        return (f'<tr><td style="padding:6px 12px;font-weight:600;color:#CC0000;'
+                f'white-space:nowrap;width:220px">{label}</td>'
+                f'<td style="padding:6px 12px">{value}</td></tr>')
+
+    info_rows += _info_row(s["carrier_lbl"],  carrier or "—")
+    info_rows += _info_row(s["cmr_lbl"],      cmr_number or "—")
+    if tracking:
+        info_rows += _info_row(s["tracking_lbl"], tracking)
+    info_rows += _info_row(s["eta_lbl"],      estimated_delivery or "—")
+
+    # Products table
+    prod_rows = ""
+    for i, (sku, info) in enumerate(skus_raw.items()):
+        d   = info.get("data") or {}
+        qty = int(info.get("qty") or 1)
+        ean = d.get("ean") or "N/A"
+        nm  = d.get("name", sku)[:70]
+        _bg = "#fdeaea" if i % 2 == 1 else "#ffffff"
+        _td = f'border:1px solid #f0c0c0;padding:7px 10px;font-size:13px;background:{_bg};'
+        prod_rows += (
+            f'<tr>'
+            f'<td style="{_td}text-align:center">{sku}</td>'
+            f'<td style="{_td}text-align:center">{ean}</td>'
+            f'<td style="{_td}text-align:left">{nm}</td>'
+            f'<td style="{_td}text-align:center;font-weight:600">{qty}</td>'
+            f'</tr>'
+        )
+
+    _th = ('background:#CC0000;color:#fff;padding:8px 12px;'
+           'font-size:12px;font-weight:600;text-align:center;')
+
+    body = f"""
+<div style="background:#CC0000;padding:14px 20px;margin-bottom:24px;">
+  <span style="color:#fff;font-size:18px;font-weight:700;letter-spacing:1px;">WORTEN</span>
+  <span style="color:#ffcccc;font-size:13px;margin-left:10px;">International Wholesale</span>
+</div>
+{"<div style='text-align:center;margin-bottom:20px;'><img src='" + logo + "' style='max-height:60px'/></div>" if logo else ""}
+<p>{s['intro']}</p>
+<p>{s['body1']}</p>
+
+<table style="border-collapse:collapse;width:100%;margin:16px 0;background:#f9f9f9;border:1px solid #eee;border-radius:4px">
+{info_rows}
+</table>
+
+<h3 style="color:#CC0000;font-size:13px;text-transform:uppercase;letter-spacing:.5px;margin:20px 0 8px">{s['products_hdr']}</h3>
+<table style="border-collapse:collapse;width:100%;margin:8px 0">
+  <tr>
+    <th style="{_th}">{s['col_sku']}</th>
+    <th style="{_th}">{s['col_ean']}</th>
+    <th style="{_th}text-align:left">{s['col_product']}</th>
+    <th style="{_th}">{s['col_qty']}</th>
+  </tr>
+  {prod_rows}
+</table>
+
+<p style="margin-top:16px">{s['footer_note']}</p>
+<p>{s['closing']}</p>
+<p><strong>{USER_NAME}</strong><br>
+{USER_TITLE}<br>
+<a href="mailto:{USER_EMAIL}">{USER_EMAIL}</a> · {USER_PHONE}<br>
+{COMPANY_NAME}</p>
+"""
+    return _wrap_html(body)
+
+
+def generate_transport_request(
+    deal: dict,
+    carrier_name: str = "",
+    carrier_email: str = "",
+    n_pallets: int = 1,
+    cargo_value: float = 0.0,
+    collection_date: str = "",
+) -> str:
+    """
+    Gera email HTML de pedido de cotação de transporte para uma transportadora.
+    Língua: sempre PT (comunicação interna/fornecedor nacional).
+    100% Python — sem Claude.
+    """
+    from datetime import datetime
+    from config import USER_NAME, USER_TITLE, USER_EMAIL, USER_PHONE, COMPANY_NAME, WAREHOUSE
+
+    deal_id  = deal.get("Deal ID") or deal.get("deal_id", "")
+    client   = deal.get("Cliente") or deal.get("client", "")
+    country  = deal.get("País") or deal.get("country", "")
+    incoterm = deal.get("Incoterm") or deal.get("incoterm", "EXW — Ex Works (Azambuja)")
+    skus_raw = deal.get("_skus_detail") or {}
+    now_str  = datetime.now().strftime("%d/%m/%Y")
+    logo     = _logo_b64()
+
+    # Cargo summary from deal products
+    product_lines = []
+    for sku, info in skus_raw.items():
+        d   = info.get("data") or {}
+        qty = int(info.get("qty") or 1)
+        nm  = d.get("name", sku)[:60]
+        brd = d.get("brand", "")
+        product_lines.append(f"{brd} {nm}".strip() + f" × {qty} un.")
+
+    cargo_desc = "; ".join(product_lines[:5])
+    if len(product_lines) > 5:
+        cargo_desc += f" (+ {len(product_lines)-5} outros artigos)"
+
+    _th = ('background:#CC0000;color:#fff;padding:8px 12px;'
+           'font-size:12px;font-weight:600;text-align:center;white-space:nowrap;')
+    _td = 'border:1px solid #ddd;padding:7px 12px;font-size:13px;'
+
+    body = f"""
+<div style="background:#CC0000;padding:14px 20px;margin-bottom:24px;">
+  <span style="color:#fff;font-size:18px;font-weight:700;letter-spacing:1px;">WORTEN</span>
+  <span style="color:#ffcccc;font-size:13px;margin-left:10px;">International Wholesale</span>
+</div>
+{"<div style='text-align:center;margin-bottom:20px;'><img src='" + logo + "' style='max-height:60px'/></div>" if logo else ""}
+<p>{"Exm.º/a Sr./a," if not carrier_name else f"Exm.º/a Sr./a da <strong>{carrier_name}</strong>,"}</p>
+<p>Venho por este meio solicitar uma cotação de transporte para o seguinte envio:</p>
+
+<table style="border-collapse:collapse;width:100%;margin:16px 0">
+  <tr>
+    <th style="{_th}text-align:left">Campo</th>
+    <th style="{_th}text-align:left">Detalhe</th>
+  </tr>
+  <tr><td style="{_td}font-weight:600;color:#CC0000">Referência Interna</td><td style="{_td}">{deal_id} — {client} ({country})</td></tr>
+  <tr><td style="{_td}font-weight:600;color:#CC0000;background:#fafafa">Origem (Pickup)</td><td style="{_td};background:#fafafa">{WAREHOUSE}</td></tr>
+  <tr><td style="{_td}font-weight:600;color:#CC0000">Destino</td><td style="{_td}">{country}</td></tr>
+  <tr><td style="{_td}font-weight:600;color:#CC0000;background:#fafafa">Nº de Paletes</td><td style="{_td};background:#fafafa">{n_pallets} Europalete(s)</td></tr>
+  <tr><td style="{_td}font-weight:600;color:#CC0000">Valor da Mercadoria</td><td style="{_td}">{f"{cargo_value:,.2f} EUR" if cargo_value else "A confirmar"}</td></tr>
+  <tr><td style="{_td}font-weight:600;color:#CC0000;background:#fafafa">Data Prevista de Recolha</td><td style="{_td};background:#fafafa">{collection_date or "A definir — aguardar confirmação"}</td></tr>
+  <tr><td style="{_td}font-weight:600;color:#CC0000">Incoterm</td><td style="{_td}">{incoterm}</td></tr>
+  <tr><td style="{_td}font-weight:600;color:#CC0000;background:#fafafa">Descrição da Carga</td><td style="{_td};background:#fafafa">{cargo_desc or "Eletrodomésticos / Eletrónica de consumo"}</td></tr>
+</table>
+
+<p>Solicito, por favor, indicação de:</p>
+<ul style="line-height:2">
+  <li>Custo de frete (EUR, s/ IVA)</li>
+  <li>Prazo de trânsito estimado</li>
+  <li>Frequência de partidas</li>
+  <li>Possibilidade de seguro de carga e respectivo custo</li>
+</ul>
+<p>Agradeço resposta com a maior brevidade possível.</p>
+<p>Com os melhores cumprimentos,</p>
+<p><strong>{USER_NAME}</strong><br>
+{USER_TITLE}<br>
+<a href="mailto:{USER_EMAIL}">{USER_EMAIL}</a> · {USER_PHONE}<br>
+{COMPANY_NAME}</p>
+"""
+    return _wrap_html(body)

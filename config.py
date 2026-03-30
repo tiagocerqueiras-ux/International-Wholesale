@@ -96,6 +96,8 @@ except Exception:
 
 CACHE_DIR       = Path(__file__).parent / ".cache"
 SIMULATOR_CACHE = CACHE_DIR / "simulator_index.json"
+TRANSPORT_FILE  = BASE_DIR / "Docs" / "Simulador_Exportacao_V2.26 - B2B.xlsx"
+TRANSPORT_CACHE = CACHE_DIR / "transport_cache.json"
 EMAILS_OUT_DIR  = Path(__file__).parent / "emails_out"
 
 # ── Simulador ─────────────────────────────────────────────────────────────────
@@ -175,19 +177,60 @@ PAYMENT_CONDITIONS_DEFAULT = PAYMENT_CONDITIONS_LIST[0]
 
 # ── Status dos deals ──────────────────────────────────────────────────────────
 STATUSES = [
+    "Lead",
+    "Pedido de Cotação",
     "Rascunho",
     "Enviado",
     "Em Negociação",
     "Follow-up",
-    "Fechado",
+    "Encomenda Confirmada",
+    "Em Preparação",
+    "Expedido",
+    "Entregue",
+    "Faturado",
+    "Arquivado",
     "Perdido",
 ]
 
 STATUS_COLORS = {
-    "Rascunho":      "FFF3CD",
-    "Enviado":       "D1ECF1",
-    "Em Negociação": "D4EDDA",
-    "Follow-up":     "FFE5CC",
-    "Fechado":       "C3E6CB",
-    "Perdido":       "F5C6CB",
+    "Lead":                 "E8F4FD",
+    "Pedido de Cotação":    "D0E8F7",
+    "Rascunho":             "FFF3CD",
+    "Enviado":              "D1ECF1",
+    "Em Negociação":        "D4EDDA",
+    "Follow-up":            "FFE5CC",
+    "Encomenda Confirmada": "C8E6C9",
+    "Em Preparação":        "DCEDC8",
+    "Expedido":             "F3E5F5",
+    "Entregue":             "E1F5FE",
+    "Faturado":             "C3E6CB",
+    "Arquivado":            "E0E0E0",
+    "Perdido":              "F5C6CB",
 }
+
+# ── Pipeline — grupos de status ───────────────────────────────────────────────
+PIPELINE_ACTIVE_STATUSES = [
+    "Lead", "Pedido de Cotação", "Rascunho", "Enviado",
+    "Em Negociação", "Follow-up",
+]
+PIPELINE_ORDER_STATUSES = [
+    "Encomenda Confirmada", "Em Preparação", "Expedido", "Entregue",
+]
+PIPELINE_CLOSED_STATUSES = ["Faturado", "Arquivado", "Perdido"]
+
+# Days without update before a deal is flagged as "at risk"
+DEAL_STALE_DAYS = 14
+
+# ── Pricing Engine ────────────────────────────────────────────────────────────
+MIN_MARGIN_DEFAULT = 3.0   # % — alerta visual quando margem por linha desce abaixo deste valor
+TARGET_MARGIN_DEFAULT = 5.0  # % — margem alvo global para cálculo de Apoio Adicional no RFQ
+
+# ── Business Plan — KPIs de referência ────────────────────────────────────────
+BP_TARGET_REVENUE   = 15_000_000   # EUR/ano — faturação alvo
+BP_BREAK_EVEN       = 11_500_000   # EUR/ano — ponto de equilíbrio
+BP_TARGET_EBITDA    =    100_000   # EUR/ano — EBITDA alvo
+BP_TAKE_RATE        =      0.0265  # 2,65% sobre faturação = nossa parte
+BP_OUR_CUT_PCT      =       0.30   # 30% da margem bruta = proveito BoxMovers
+BP_FIXED_COSTS      =    306_000   # EUR/ano — pessoal fixo (2 colabs + 2 contractors)
+BP_SCENARIO_BASE    = 20_000_000   # EUR — cenário base
+BP_SCENARIO_OPT     = 30_000_000   # EUR — cenário otimista

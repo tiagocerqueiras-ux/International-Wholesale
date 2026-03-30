@@ -10,6 +10,19 @@ from datetime import datetime
 
 from config import SUPABASE_URL, SUPABASE_KEY, STATUSES
 
+# ── SQL para executar no Supabase (uma única vez) ─────────────────────────────
+# ALTER TABLE deals
+#   ADD COLUMN IF NOT EXISTS order_date        TEXT,
+#   ADD COLUMN IF NOT EXISTS expected_delivery TEXT,
+#   ADD COLUMN IF NOT EXISTS actual_delivery   TEXT,
+#   ADD COLUMN IF NOT EXISTS invoice_number    TEXT,
+#   ADD COLUMN IF NOT EXISTS invoice_date      TEXT,
+#   ADD COLUMN IF NOT EXISTS invoice_value     NUMERIC,
+#   ADD COLUMN IF NOT EXISTS cmr_number        TEXT,
+#   ADD COLUMN IF NOT EXISTS packing_list      TEXT,
+#   ADD COLUMN IF NOT EXISTS supplier_ids      TEXT;
+# ─────────────────────────────────────────────────────────────────────────────
+
 # ── Cliente Supabase ───────────────────────────────────────────────────────────
 
 def _get_client():
@@ -83,6 +96,15 @@ _DB_TO_HEADER = {
     "status":             "Status",
     "updated_at":         "Data Último Update",
     "notes":              "Notas",
+    "order_date":         "Data Encomenda",
+    "expected_delivery":  "Entrega Prevista",
+    "actual_delivery":    "Entrega Real",
+    "invoice_number":     "Nº Fatura",
+    "invoice_date":       "Data Fatura",
+    "invoice_value":      "Valor Fatura (€)",
+    "cmr_number":         "CMR Nº",
+    "packing_list":       "Packing List Nº",
+    "supplier_ids":       "Fornecedor(es)",
 }
 
 
@@ -213,6 +235,94 @@ def update_margin(deal_id: str, margin_pct: float, pvp_total: float = None) -> b
         return False
 
 
+def update_deal_operational(
+    deal_id: str,
+    order_date: str = None,
+    expected_delivery: str = None,
+    actual_delivery: str = None,
+    invoice_number: str = None,
+    invoice_date: str = None,
+    invoice_value: float = None,
+    cmr_number: str = None,
+    packing_list: str = None,
+    supplier_ids: str = None,
+) -> bool:
+    """Atualiza campos operacionais/logísticos de um deal."""
+    try:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        upd: dict = {"updated_at": now}
+        if order_date        is not None: upd["order_date"]         = order_date
+        if expected_delivery is not None: upd["expected_delivery"]  = expected_delivery
+        if actual_delivery   is not None: upd["actual_delivery"]    = actual_delivery
+        if invoice_number    is not None: upd["invoice_number"]     = invoice_number
+        if invoice_date      is not None: upd["invoice_date"]       = invoice_date
+        if invoice_value     is not None: upd["invoice_value"]      = round(float(invoice_value), 2)
+        if cmr_number        is not None: upd["cmr_number"]         = cmr_number
+        if packing_list      is not None: upd["packing_list"]       = packing_list
+        if supplier_ids      is not None: upd["supplier_ids"]       = supplier_ids
+        _get_client().table("deals").update(upd).eq("deal_id", deal_id).execute()
+        return True
+    except Exception as e:
+        print(f"[deal_tracker] update_deal_operational erro: {e}")
+        return False
+
+
+def get_pipeline_stats(salesperson_filter: str = None) -> dict:
+    """
+    Retorna estatísticas do pipeline agrupadas por status.
+    Devolve dict: {status: {"count": int, "value": float}}
+    e também lista de deals "em risco" (sem update há > DEAL_STALE_DAYS dias).
+    """
+    from config import DEAL_STALE_DAYS
+    try:
+        q = _get_client().table("deals").select(
+            "deal_id,client,status,proposed_value,updated_at,salesperson_email"
+        )
+        if salesperson_filter:
+            q = q.ilike("salesperson_email", salesperson_filter)
+        res = q.execute()
+        rows = res.data or []
+
+        stats: dict = {}
+        stale: list = []
+        now = datetime.now()
+
+        for r in rows:
+            st_   = r.get("status") or "Rascunho"
+            val   = float(r.get("proposed_value") or 0)
+            if st_ not in stats:
+                stats[st_] = {"count": 0, "value": 0.0}
+            stats[st_]["count"] += 1
+            stats[st_]["value"] += val
+
+            # Risk check — deals in non-closed statuses
+            from config import PIPELINE_CLOSED_STATUSES
+            if st_ not in PIPELINE_CLOSED_STATUSES:
+                upd_str = (r.get("updated_at") or "")[:16]
+                try:
+                    upd_dt = datetime.strptime(upd_str, "%Y-%m-%d %H:%M")
+                    diff   = (now - upd_dt).days
+                    if diff >= DEAL_STALE_DAYS:
+                        stale.append({
+                            "deal_id": r.get("deal_id"),
+                            "client":  r.get("client"),
+                            "status":  st_,
+                            "days":    diff,
+                            "value":   val,
+                        })
+                except Exception:
+                    pass
+
+        # Round values
+        for st_ in stats:
+            stats[st_]["value"] = round(stats[st_]["value"], 2)
+
+        return {"by_status": stats, "stale": stale}
+    except Exception as e:
+        print(f"[deal_tracker] get_pipeline_stats erro: {e}")
+        return {"by_status": {}, "stale": []}
+
+
 def update_deal_prices(deal_id: str, skus_data: dict, pvp_total: float, margin_pct: float) -> bool:
     """Atualiza skus_detail, valor proposto e margem de um deal existente."""
     try:
@@ -319,6 +429,27 @@ def get_deal(deal_id: str) -> dict | None:
         return None
 
 
+def get_sku_price_history(sku_id: str, limit: int = 8) -> list:
+    """
+    Devolve o histórico de deals que contêm o SKU indicado.
+    Útil para o Pricing Engine mostrar preços negociados anteriormente.
+    Devolve lista de dicts com: deal_id, client, country, date, status,
+    margin_pct, proposed_value, language — ordenados por data desc.
+    """
+    try:
+        res = (_get_client().table("deals")
+               .select("deal_id,client,company,country,created_at,status,"
+                       "margin_pct,proposed_value,language,sku_ids")
+               .ilike("sku_ids", f"%{sku_id}%")
+               .order("created_at", desc=True)
+               .limit(limit)
+               .execute())
+        return res.data or []
+    except Exception as e:
+        print(f"[deal_tracker] get_sku_price_history erro: {e}")
+        return []
+
+
 def deal_products_table(deal: dict) -> list[dict]:
     """Converte _skus_detail em lista de dicts com as mesmas colunas da cotação."""
     rows = []
@@ -345,3 +476,144 @@ def deal_products_table(deal: dict) -> list[dict]:
             "Total (€)":        round(pvp * qty, 2),
         })
     return rows
+
+
+def get_executive_dashboard_data(year: int = None, salesperson_filter: str = None) -> dict:
+    """
+    Agrega dados para o Dashboard Executivo.
+    Devolve: revenue, pipeline, margin, P&L estimado, por comercial, por mês.
+    """
+    from config import PIPELINE_CLOSED_STATUSES, PIPELINE_ACTIVE_STATUSES, BP_OUR_CUT_PCT
+
+    def _parse_margin(val) -> float:
+        try:
+            return float(str(val or "0").replace("%", "").strip())
+        except Exception:
+            return 0.0
+
+    try:
+        q = _get_client().table("deals").select(
+            "deal_id,client,country,status,proposed_value,invoice_value,"
+            "margin_pct,salesperson_email,created_at,updated_at"
+        )
+        if salesperson_filter:
+            q = q.ilike("salesperson_email", salesperson_filter)
+        res = q.execute()
+        rows = res.data or []
+    except Exception as e:
+        print(f"[deal_tracker] get_executive_dashboard_data erro: {e}")
+        return {}
+
+    # Filter by year if requested
+    if year:
+        rows = [r for r in rows if str(r.get("created_at","")).startswith(str(year))]
+
+    # ── Categorize ────────────────────────────────────────────────────────
+    # "Faturado" é o status final de ganho no pipeline actual (13 statuses).
+    # "Fechado" era usado em versões anteriores — manter por retrocompatibilidade
+    # com dados históricos, mas o status corrente é "Faturado".
+    faturado_statuses = {"Faturado"}
+    closed_win        = {"Faturado"}          # removido "Fechado" — não existe no pipeline actual
+    closed_lost       = {"Perdido"}
+    active_statuses   = set(PIPELINE_ACTIVE_STATUSES)
+    order_statuses    = {"Encomenda Confirmada", "Em Preparação", "Expedido", "Entregue"}
+    # "Arquivado" pertence a PIPELINE_CLOSED_STATUSES — não conta como revenue
+
+    revenue_rows  = [r for r in rows if r.get("status") in closed_win | faturado_statuses | order_statuses]
+    pipeline_rows = [r for r in rows if r.get("status") in active_statuses]
+    won_rows      = [r for r in rows if r.get("status") in closed_win]
+    lost_rows     = [r for r in rows if r.get("status") in closed_lost]
+
+    def _val(r):
+        v = r.get("invoice_value") or r.get("proposed_value") or 0
+        try: return float(v)
+        except: return 0.0
+
+    total_revenue  = round(sum(_val(r) for r in revenue_rows), 2)
+    total_pipeline = round(sum(_val(r) for r in pipeline_rows), 2)
+
+    # Weighted average margin (for deals with a value)
+    _margin_total = sum(_val(r) * _parse_margin(r.get("margin_pct")) for r in revenue_rows if _val(r) > 0)
+    _margin_base  = sum(_val(r) for r in revenue_rows if _val(r) > 0)
+    avg_margin    = round(_margin_total / _margin_base, 2) if _margin_base else 0.0
+
+    gross_margin_value = round(total_revenue * avg_margin / 100, 2)
+    our_cut            = round(gross_margin_value * BP_OUR_CUT_PCT, 2)
+
+    # Win rate
+    total_closed = len(won_rows) + len(lost_rows)
+    win_rate     = round(len(won_rows) / total_closed * 100, 1) if total_closed else 0.0
+
+    # ── Per salesperson ───────────────────────────────────────────────────
+    sp_data: dict = {}
+    for r in rows:
+        sp = (r.get("salesperson_email") or "sem_email").lower().strip()
+        if sp not in sp_data:
+            sp_data[sp] = {
+                "email":    sp,
+                "revenue":  0.0,
+                "pipeline": 0.0,
+                "won":      0,
+                "lost":     0,
+                "active":   0,
+                "margin_w": 0.0,
+                "margin_b": 0.0,
+            }
+        v = _val(r)
+        st_ = r.get("status","")
+        if st_ in closed_win | faturado_statuses | order_statuses:
+            sp_data[sp]["revenue"]  += v
+            sp_data[sp]["margin_w"] += v * _parse_margin(r.get("margin_pct"))
+            sp_data[sp]["margin_b"] += v
+        if st_ in active_statuses:
+            sp_data[sp]["pipeline"] += v
+            sp_data[sp]["active"]   += 1
+        if st_ in closed_win:
+            sp_data[sp]["won"]  += 1
+        if st_ in closed_lost:
+            sp_data[sp]["lost"] += 1
+
+    sp_list = []
+    for sp, d in sp_data.items():
+        avg_m = round(d["margin_w"] / d["margin_b"], 2) if d["margin_b"] else 0.0
+        sp_list.append({
+            "email":      d["email"],
+            "revenue":    round(d["revenue"], 2),
+            "pipeline":   round(d["pipeline"], 2),
+            "won":        d["won"],
+            "lost":       d["lost"],
+            "active":     d["active"],
+            "avg_margin": avg_m,
+            "win_rate":   round(d["won"] / (d["won"] + d["lost"]) * 100, 1)
+                          if (d["won"] + d["lost"]) > 0 else 0.0,
+        })
+    sp_list.sort(key=lambda x: -x["revenue"])
+
+    # ── Monthly revenue ───────────────────────────────────────────────────
+    monthly: dict = {}
+    for r in revenue_rows:
+        dt_str = str(r.get("created_at",""))[:7]  # "YYYY-MM"
+        if dt_str and len(dt_str) == 7:
+            monthly[dt_str] = round(monthly.get(dt_str, 0.0) + _val(r), 2)
+    monthly_sorted = dict(sorted(monthly.items()))
+
+    # ── Deals by status count ─────────────────────────────────────────────
+    status_counts: dict = {}
+    for r in rows:
+        st_ = r.get("status","—")
+        status_counts[st_] = status_counts.get(st_, 0) + 1
+
+    return {
+        "total_revenue":       total_revenue,
+        "total_pipeline":      total_pipeline,
+        "avg_margin":          avg_margin,
+        "gross_margin_value":  gross_margin_value,
+        "our_cut":             our_cut,
+        "win_rate":            win_rate,
+        "total_deals":         len(rows),
+        "won_deals":           len(won_rows),
+        "lost_deals":          len(lost_rows),
+        "by_salesperson":      sp_list,
+        "monthly_revenue":     monthly_sorted,
+        "status_counts":       status_counts,
+    }
