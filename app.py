@@ -441,11 +441,13 @@ if page == "🆕  Nova Cotação":
             cols[3].markdown(f"{d.get('brand','')[:12]} · {d.get('name','')[:35]}")
 
             # FC_sim depende do destino (vat_rate vem da secção 2)
+            # Para exportação, deduz EIS do PCL (taxa não aplicável fora de PT)
+            _eis_deduct = (eis_total or eis_da or 0.0)   # fallback para eis_da se eis_total=0
             if ufc_raw is not None:
-                if vat_rate > 0:   # Portugal
+                if vat_rate > 0:   # Portugal — EIS incluído no PCL, sem dedução
                     fc_sim = round(ufc_raw + sell_out, 4)
-                else:              # Exportação
-                    fc_sim = round(ufc_raw - eis_total + sell_out, 4)
+                else:              # Exportação — EIS deduzido do PCL
+                    fc_sim = round(ufc_raw - _eis_deduct + sell_out, 4)
                 cols[4].markdown(f"**{fmt4(fc_sim)}**")
             else:
                 fc_sim = None
@@ -475,7 +477,14 @@ if page == "🆕  Nova Cotação":
 
             cols[6].markdown(f"**{fmt4(fc_final)}**" if fc_final else "—")
             cols[8].markdown(f"**{fmt4(pvp)}**" if pvp else "—")
-            cols[9].markdown(f"{'⚠️ ' if eis_da>0 else ''}{fmt4(eis_da) if eis_da>0 else '—'}")
+            # EIS: mostrar dedução se exportação, ou aviso se Portugal
+            if eis_da > 0:
+                if vat_rate == 0:
+                    cols[9].markdown(f"✅ -{fmt4(_eis_deduct)}")   # deduzido do PCL
+                else:
+                    cols[9].markdown(f"⚠️ {fmt4(eis_da)}")         # incluído (PT)
+            else:
+                cols[9].markdown("—")
             cols[10].markdown(f"{'✅ ' if sell_in else ''}{fmt4(sell_in) if sell_in else '—'}")
 
             if cols[11].button("✕", key=f"rm_{sku}", help="Remover produto"):
@@ -494,7 +503,7 @@ if page == "🆕  Nova Cotação":
 
         def _fc_sim_for(d):
             raw = d.get("ufc_raw") or 0
-            eis = d.get("eis_total") or 0
+            eis = (d.get("eis_total") or d.get("eis_da") or 0)  # fallback eis_da
             so  = d.get("sell_out") or 0
             return round(raw + so, 4) if vat_rate > 0 else round(raw - eis + so, 4)
 

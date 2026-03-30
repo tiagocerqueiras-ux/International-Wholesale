@@ -163,9 +163,8 @@ def _build_products_context(skus_data: dict, language: str = "EN") -> tuple[str,
             f"| {ean} | {sku} | {name} | {brand} | {pvp_pt_str} | {pvp:.2f} | {qty} | {total:.2f} |"
         )
 
-        if eis_da > 0:
-            notes.append(_t(language, "eis_note", sku=sku, eis=eis_da))
-        # Sell-In e Sell-Out são informação interna — não expor ao cliente
+        # EIS, Sell-In e Sell-Out são informação interna — não expor ao cliente
+        # EIS já está deduzido no fc_final para exportação (PCL - EIS)
 
     return "\n".join(rows), "\n".join(notes) if notes else "none"
 
