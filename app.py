@@ -3406,28 +3406,48 @@ elif page == "🚚  Logística":
 
     with _lt_tab2:
         st.subheader("🔄 Actualizar Cache de Tarifas")
-        st.markdown(
-            "O cache é construído automaticamente na primeira utilização. "
-            "Usa este botão quando o ficheiro Excel das tarifas for atualizado."
-        )
-        if _tc:
-            _n_dest = len(_tc.get("destinations", {}))
-            st.success(f"Cache activo — **{_n_dest}** destinos carregados")
 
-        if st.button("🔨 Reconstruir Cache de Tarifas", key="lt_rebuild", type="primary"):
-            with st.spinner("A ler Excel e reconstruir cache..."):
-                try:
-                    _new_cache = build_transport_cache()
-                    st.cache_data.clear()
-                    _nd2 = len(_new_cache.get("destinations", {}))
-                    st.success(
-                        f"Cache reconstruído — **{_nd2}** destinos · "
-                        f"{len(_new_cache.get('countries', []))} países"
-                    )
-                    st.rerun()
-                except Exception as _e:
-                    st.error(f"Erro ao reconstruir: {_e}")
-                    import traceback; st.code(traceback.format_exc())
+        if _tc and _tc.get("destinations"):
+            _n_dest = len(_tc.get("destinations", {}))
+            st.success(f"✅ Cache activo — **{_n_dest}** destinos · {len(_tc.get('countries', []))} países")
+        else:
+            st.warning("⚠️ Cache não disponível — simulador desactivado neste ambiente.")
+
+        from config import TRANSPORT_FILE as _TF
+        if _TF.exists():
+            st.info(f"Ficheiro de tarifas encontrado: `{_TF.name}`")
+            if st.button("🔨 Reconstruir Cache de Tarifas", key="lt_rebuild", type="primary"):
+                with st.spinner("A ler Excel e reconstruir cache..."):
+                    try:
+                        _new_cache = build_transport_cache()
+                        st.cache_data.clear()
+                        _nd2 = len(_new_cache.get("destinations", {}))
+                        st.success(
+                            f"✅ Cache reconstruído — **{_nd2}** destinos · "
+                            f"{len(_new_cache.get('countries', []))} países"
+                        )
+                        st.rerun()
+                    except Exception as _e:
+                        st.error(f"Erro ao reconstruir: {_e}")
+                        import traceback; st.code(traceback.format_exc())
+        else:
+            st.error(
+                "❌ **Ficheiro Excel de tarifas não encontrado neste servidor.**\n\n"
+                "O simulador logístico funciona apenas em ambiente local onde o ficheiro "
+                "`Simulador_Exportacao_V2.26 - B2B.xlsx` está disponível.\n\n"
+                "**Para activar no cloud:** constrói o cache localmente e faz commit do ficheiro "
+                "`.cache/transport_cache.json` para o repositório."
+            )
+            st.markdown("**Comando para correr localmente:**")
+            st.code(
+                "cd cotacao_agent\n"
+                "py -3 -c \"from transport_lookup import build_transport_cache; "
+                "build_transport_cache(); print('Cache construído com sucesso')\"\n"
+                "git add .cache/transport_cache.json\n"
+                "git commit -m 'feat: add pre-built transport cache'\n"
+                "git push",
+                language="bash"
+            )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
