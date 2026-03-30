@@ -213,6 +213,32 @@ def update_margin(deal_id: str, margin_pct: float, pvp_total: float = None) -> b
         return False
 
 
+def update_deal_prices(deal_id: str, skus_data: dict, pvp_total: float, margin_pct: float) -> bool:
+    """Atualiza skus_detail, valor proposto e margem de um deal existente."""
+    try:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        # Recalcular produtos e qtd total
+        products = []
+        qty_total = 0
+        for sku, info in skus_data.items():
+            d   = info.get("data") or {}
+            qty = int(info.get("qty") or 1)
+            products.append(f"{d.get('name', sku)[:60]} (x{qty})")
+            qty_total += qty
+        _get_client().table("deals").update({
+            "skus_detail":    skus_data,
+            "proposed_value": round(pvp_total, 2),
+            "margin_pct":     f"{margin_pct:.1f}%",
+            "qty_total":      qty_total,
+            "products":       "; ".join(products),
+            "updated_at":     now,
+        }).eq("deal_id", deal_id).execute()
+        return True
+    except Exception as e:
+        print(f"[deal_tracker] update_deal_prices erro: {e}")
+        return False
+
+
 def list_deals(status_filter: str = None, salesperson_filter: str = None) -> list:
     try:
         q = _get_client().table("deals").select(

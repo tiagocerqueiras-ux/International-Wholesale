@@ -17,7 +17,7 @@ from config import (
     STOCKS_EMAIL, ADMIN_EMAIL,
 )
 from sku_lookup import lookup_skus, search_by_name, build_cache
-from deal_tracker import add_deal, update_status, update_margin, list_deals, get_deal, deal_products_table
+from deal_tracker import add_deal, update_status, update_margin, update_deal_prices, list_deals, get_deal, deal_products_table
 from email_generator import generate_proposal, generate_followup, save_email_html, generate_closing_emails, generate_supplier_request
 from email_sender import create_draft, build_subject
 from client_tracker import (
@@ -671,6 +671,82 @@ elif page == "📋  Deals em Curso":
                     st.dataframe(df, use_container_width=True, hide_index=True)
                 else:
                     st.caption(f"Produtos: {str(deal_summary.get('Produtos',''))}")
+
+                # ── Editar tabela de preços ────────────────────────────────
+                if _role in CAN_EDIT_DEALS:
+                    st.markdown("---")
+                    _edit_key = f"edit_prices_{did}"
+                    if st.button("✏️ Editar Tabela de Preços", key=f"btn_edit_{did}"):
+                        st.session_state[_edit_key] = not st.session_state.get(_edit_key, False)
+
+                    if st.session_state.get(_edit_key):
+                        _skus_edit = dict(deal.get("_skus_detail") or {})
+                        if not _skus_edit:
+                            st.warning("Sem dados de produtos para editar.")
+                        else:
+                            with st.container(border=True):
+                                st.caption("✏️ Editar preços — altera Qty, Preço Cliente e/ou Margem por linha")
+                                _vat_str_e  = str(deal.get("IVA", ""))
+                                _vat_rate_e = 0.23 if "23" in _vat_str_e else 0.0
+                                _freight_e  = float(deal.get("Frete (€)") or 0)
+
+                                eh = st.columns([0.8, 1.2, 2.5, 1.3, 1.3, 1.3])
+                                for col, lbl in zip(eh, ["Qty","SKU","Produto","FC Final","Preço Cliente","Total"]):
+                                    col.caption(lbl)
+
+                                new_skus = {}
+                                for sku, info in _skus_edit.items():
+                                    d        = info.get("data") or {}
+                                    fc_final = float(info.get("fc_final") or d.get("ufc_raw") or 0)
+                                    old_pvp  = float(info.get("pvp") or fc_final)
+                                    old_qty  = int(info.get("qty") or 1)
+                                    name     = f"{d.get('brand','')[:10]} · {d.get('name','')[:30]}"
+
+                                    ec = st.columns([0.8, 1.2, 2.5, 1.3, 1.3, 1.3])
+                                    if f"eq_{did}_{sku}" not in st.session_state:
+                                        st.session_state[f"eq_{did}_{sku}"] = old_qty
+                                    if f"ep_{did}_{sku}" not in st.session_state:
+                                        st.session_state[f"ep_{did}_{sku}"] = old_pvp
+
+                                    new_qty = ec[0].number_input("", min_value=1, step=1,
+                                                                  key=f"eq_{did}_{sku}",
+                                                                  label_visibility="collapsed")
+                                    ec[1].markdown(f"`{sku}`")
+                                    ec[2].markdown(name)
+                                    ec[3].markdown(f"{fc_final:.2f} €")
+                                    new_pvp = ec[4].number_input("", min_value=0.0, step=0.5,
+                                                                  format="%.2f",
+                                                                  key=f"ep_{did}_{sku}",
+                                                                  label_visibility="collapsed")
+                                    ec[5].markdown(f"**{new_pvp * new_qty:.2f} €**")
+
+                                    new_info = dict(info)
+                                    new_info["qty"] = new_qty
+                                    new_info["pvp"] = new_pvp
+                                    new_margin = ((new_pvp - fc_final) / new_pvp * 100) if new_pvp else 0
+                                    new_info["margin"] = round(new_margin, 2)
+                                    new_skus[sku] = new_info
+
+                                # Totais
+                                _new_pvp_total  = sum(new_skus[s]["pvp"] * new_skus[s]["qty"] for s in new_skus)
+                                _new_cost_total = sum(float((new_skus[s].get("data") or {}).get("ufc_raw") or new_skus[s].get("fc_final") or 0) * new_skus[s]["qty"] for s in new_skus)
+                                _new_vat        = round(_new_pvp_total * _vat_rate_e, 2)
+                                _new_total      = round(_new_pvp_total + _freight_e + _new_vat, 2)
+                                _new_margin_pct = ((_new_pvp_total - _new_cost_total) / _new_pvp_total * 100) if _new_pvp_total else 0
+
+                                st.markdown(f"**Subtotal:** {_new_pvp_total:.2f} € &nbsp;|&nbsp; "
+                                            f"**Frete:** {_freight_e:.2f} € &nbsp;|&nbsp; "
+                                            f"**Total:** {_new_total:.2f} € &nbsp;|&nbsp; "
+                                            f"**Margem:** {_new_margin_pct:.1f}%")
+
+                                if st.button("💾 Guardar Alterações de Preços", key=f"save_prices_{did}", type="primary"):
+                                    ok = update_deal_prices(did, new_skus, _new_total, _new_margin_pct)
+                                    if ok:
+                                        st.success(f"✅ Preços do deal **{did}** atualizados!")
+                                        st.session_state.pop(_edit_key, None)
+                                        st.rerun()
+                                    else:
+                                        st.error("Erro ao guardar. Tenta novamente.")
 
                 # ── Atualizar status ────────────────────────────────────────
                 st.markdown("---")
