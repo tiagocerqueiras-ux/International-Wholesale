@@ -392,8 +392,11 @@ INSTRUCTIONS:
 2. Start with the branded header (below), then <p>Dear {client_name},</p> (or equivalent in {lang_full}), then opening paragraph:
    "Please find below our commercial proposal for your review, issued under deal reference {deal_id}. All prices are quoted in EUR and represent our best commercial conditions for the indicated quantities."
 3. Render the products table with ALL {n_skus} rows — do NOT skip, merge, or omit any product. Use the exact data from PRODUCTS TABLE DATA above.
-4. After the table add the SUPPORT/EIS footnotes (if any), then output EXACTLY this HTML comment: <!-- END -->
-   STOP immediately after <!-- END -->. Do NOT write anything else — no summary, no conditions, no heading, no salutation, no signature, nothing.
+4. After ALL product rows are written, close the table EXACTLY like this: </tr></tbody></table>
+   Then add any SUPPORT/EIS footnotes (if any).
+   Then output EXACTLY this HTML comment on its own line: <!-- END -->
+   STOP immediately after <!-- END -->. Do NOT write anything else — no summary, no totals, no conditions, no heading, no salutation, no signature, nothing.
+   CRITICAL: <!-- END --> must appear AFTER </tbody></table>, never inside a table or open tag.
 5. Do NOT mention stock levels, warehouse addresses, payment conditions, incoterms, availability, prices summary, or totals anywhere.
 6. Be professional, concise, B2B focused.
 
@@ -455,10 +458,18 @@ Start with this EXACT branded header HTML:
     if '<!-- END -->' in html_body:
         html_body = html_body.split('<!-- END -->')[0]
 
-    # 6. Fechar quaisquer <div> que o Claude deixou em aberto
-    open_divs = len(_re.findall(r'<div\b[^>]*>', html_body)) - html_body.count('</div>')
-    if open_divs > 0:
-        html_body = html_body.rstrip() + ('</div>' * open_divs)
+    # 6. Fechar quaisquer tags HTML que o Claude deixou em aberto.
+    # Ordem: do mais interno para o mais externo (td/th → tr → tbody/thead → table → div)
+    # Evita que o resumo Python seja renderizado dentro de uma <table> ainda aberta.
+    def _close_tag(h: str, tag: str) -> str:
+        opens  = len(_re.findall(rf'<{tag}[\s>]', h, _re.IGNORECASE))
+        closes = len(_re.findall(rf'</{tag}>', h, _re.IGNORECASE))
+        diff   = opens - closes
+        return (h.rstrip() + (f'</{tag}>' * diff)) if diff > 0 else h
+
+    html_body = html_body.rstrip()
+    for _unclosed_tag in ('td', 'th', 'tr', 'thead', 'tbody', 'table', 'div'):
+        html_body = _close_tag(html_body, _unclosed_tag)
 
     # 7. Blocos Python gerados com inline styles (imunes a herança de CSS pai)
     closing = _t(language, "closing")
