@@ -384,7 +384,9 @@ if page == "🆕  Nova Cotação":
 
             cols = st.columns([0.5, 1.2, 1.5, 2.8, 1.4, 1.4, 1.4, 1.2, 1.6, 1.4, 1.4, 0.5])
 
-            qty_map[sku] = cols[0].number_input("", min_value=1, value=1, step=1,
+            if f"qty_{sku}" not in st.session_state:
+                st.session_state[f"qty_{sku}"] = 1
+            qty_map[sku] = cols[0].number_input("", min_value=1, step=1,
                                                 key=f"qty_{sku}", label_visibility="collapsed")
 
             cols[1].markdown(f"**`{sku}`**")
@@ -840,7 +842,9 @@ elif page == "🏭  Pedido Fornecedor":
             name      = f"{d.get('brand','')} · {d.get('name','')[:40]}"
 
             sc = st.columns([0.5, 1.2, 1.5, 3.5, 1.6, 1.6, 1.6, 0.5])
-            sup_qty_map[sku] = sc[0].number_input("", min_value=1, value=1, step=1,
+            if f"sqty_{sku}" not in st.session_state:
+                st.session_state[f"sqty_{sku}"] = 1
+            sup_qty_map[sku] = sc[0].number_input("", min_value=1, step=1,
                                                    key=f"sqty_{sku}", label_visibility="collapsed")
             sc[1].markdown(f"**`{sku}`**")
             sc[2].markdown(f"`{ean}`")
