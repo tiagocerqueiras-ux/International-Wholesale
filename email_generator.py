@@ -43,6 +43,9 @@ def _get_client() -> anthropic.Anthropic:
 
 _T = {
     "EN": {
+        "col_ean": "EAN", "col_sku": "SKU", "col_product": "Product",
+        "col_brand": "Brand", "col_pvp_pt": "PVP PT\n(ref.)",
+        "col_unit_price": "Unit Price\n(EUR)", "col_qty": "Qty", "col_total": "Total\n(EUR)",
         "vat_transport_note": (
             "If you choose to arrange your own collection, a VAT deposit will be required. "
             "This deposit will be fully refunded upon receipt of the official export documentation.\n"
@@ -64,6 +67,9 @@ _T = {
         "closing":             "Kind regards,",
     },
     "PT": {
+        "col_ean": "EAN", "col_sku": "SKU", "col_product": "Produto",
+        "col_brand": "Marca", "col_pvp_pt": "PVP PT\n(ref.)",
+        "col_unit_price": "Preço Unit.\n(EUR)", "col_qty": "Qtd.", "col_total": "Total\n(EUR)",
         "vat_transport_note": (
             "Caso opte por recolha própria, será exigido um depósito de IVA. "
             "Este depósito será integralmente reembolsado após receção da documentação oficial de exportação.\n"
@@ -85,6 +91,9 @@ _T = {
         "closing":             "Com os melhores cumprimentos,",
     },
     "ES": {
+        "col_ean": "EAN", "col_sku": "SKU", "col_product": "Producto",
+        "col_brand": "Marca", "col_pvp_pt": "PVP PT\n(ref.)",
+        "col_unit_price": "Precio Unit.\n(EUR)", "col_qty": "Cant.", "col_total": "Total\n(EUR)",
         "vat_transport_note": (
             "Si opta por organizar su propia recogida, se requerirá un depósito de IVA. "
             "Este depósito será reembolsado íntegramente tras la recepción de la documentación oficial de exportación.\n"
@@ -106,6 +115,9 @@ _T = {
         "closing":             "Atentamente,",
     },
     "FR": {
+        "col_ean": "EAN", "col_sku": "SKU", "col_product": "Produit",
+        "col_brand": "Marque", "col_pvp_pt": "PVP PT\n(réf.)",
+        "col_unit_price": "Prix Unit.\n(EUR)", "col_qty": "Qté", "col_total": "Total\n(EUR)",
         "vat_transport_note": (
             "Si vous choisissez d'organiser votre propre enlèvement, un dépôt de TVA sera requis. "
             "Ce dépôt vous sera intégralement remboursé dès réception des documents officiels d'exportation.\n"
@@ -135,7 +147,74 @@ def _t(language: str, key: str, **kwargs) -> str:
     return txt.format(**kwargs) if kwargs else txt
 
 
-# ── Formatação dos dados de produtos ─────────────────────────────────────────
+# ── Tabela de produtos gerada em Python (estrutura garantida, sem Claude) ─────
+
+def _build_product_table_html(skus_data: dict, language: str = "EN") -> str:
+    """
+    Gera a tabela de produtos inteiramente em Python com inline styles.
+    Elimina qualquer risco de malformação de HTML por parte do Claude.
+    """
+    _red    = '#CC0000'
+    _th_s   = (f'background:{_red};color:#ffffff;padding:9px 12px;'
+               f'text-align:center;font-size:12px;font-weight:600;'
+               f'letter-spacing:.3px;border:1px solid {_red};white-space:pre-line;')
+    _th_sl  = _th_s.replace('text-align:center', 'text-align:left')
+
+    def _th(label, left=False):
+        s = _th_sl if left else _th_s
+        return f'<th style="{s}">{label.replace(chr(10), "<br>")}</th>'
+
+    headers = (
+        _th(_t(language, "col_ean"))
+        + _th(_t(language, "col_sku"))
+        + _th(_t(language, "col_product"), left=True)
+        + _th(_t(language, "col_brand"))
+        + _th(_t(language, "col_pvp_pt"))
+        + _th(_t(language, "col_unit_price"))
+        + _th(_t(language, "col_qty"))
+        + _th(_t(language, "col_total"))
+    )
+
+    rows_html = ""
+    for i, (sku, info) in enumerate(skus_data.items()):
+        d      = info.get("data") or {}
+        qty    = int(info.get("qty") or 1)
+        pvp    = info.get("pvp") or 0.0
+        ean    = d.get("ean") or "N/A"
+        name   = d.get("name", sku)
+        brand  = d.get("brand") or "N/A"
+        pvp_pt = d.get("pvp_pt")
+        pvp_pt_str = f"{pvp_pt:.2f}" if pvp_pt is not None else "N/A"
+        total  = round(pvp * qty, 2)
+
+        _bg   = '#fdeaea' if i % 2 == 1 else '#ffffff'
+        _td   = (f'padding:7px 12px;border:1px solid #f0c0c0;font-size:13px;'
+                 f'text-align:center;vertical-align:middle;background:{_bg};')
+        _tdl  = _td.replace('text-align:center', 'text-align:left')
+        _tdb  = _td + 'font-weight:600;'
+
+        rows_html += (
+            f'<tr>'
+            f'<td style="{_td}">{ean}</td>'
+            f'<td style="{_td}">{sku}</td>'
+            f'<td style="{_tdl}">{name}</td>'
+            f'<td style="{_td}">{brand}</td>'
+            f'<td style="{_td}">{pvp_pt_str}</td>'
+            f'<td style="{_td}">{pvp:.2f}</td>'
+            f'<td style="{_td}">{qty}</td>'
+            f'<td style="{_tdb}">{total:,.2f}</td>'
+            f'</tr>\n'
+        )
+
+    return (
+        '\n<table style="border-collapse:collapse;width:100%;margin:16px auto;">'
+        f'\n<thead><tr>{headers}</tr></thead>'
+        f'\n<tbody>\n{rows_html}</tbody>'
+        '\n</table>'
+    )
+
+
+# ── Formatação dos dados de produtos (para o prompt Claude) ──────────────────
 
 def _build_products_context(skus_data: dict, language: str = "EN") -> tuple[str, str]:
     """
@@ -346,82 +425,55 @@ def generate_proposal(
         cost_total += fc_final * qty
 
     margin_pct = ((pvp_total - cost_total) / pvp_total * 100) if pvp_total else 0.0
-    product_rows, support_notes = _build_products_context(skus_data, language)
     n_skus = len(skus_data)
 
-    # Logo para a assinatura
-    _logo_src = _logo_b64()
-    logo_img_html = (
-        f'<img src="{_logo_src}" alt="Worten" '
-        f'style="max-height:60px;display:block;margin-bottom:8px;">'
-        if _logo_src else ""
-    )
-
     # Pre-calculate financial totals
-    freight    = freight_cost or 0.0
-    subtotal   = round(pvp_total, 2)
-    vat_amount = round((subtotal + freight) * vat_rate, 2)
+    freight     = freight_cost or 0.0
+    subtotal    = round(pvp_total, 2)
+    vat_amount  = round((subtotal + freight) * vat_rate, 2)
     grand_total = round(subtotal + freight + vat_amount, 2)
     freight_str = _t(language, "freight_tbd") if not freight else f"{freight:.2f} EUR"
     vat_str     = (_t(language, "vat_exempt") if vat_rate == 0
                    else _t(language, "vat_pct", amount=f"{vat_amount:.2f}"))
 
+    # ── Tabela de produtos gerada em Python (estrutura 100% garantida) ────────
+    product_table_html = _build_product_table_html(skus_data, language)
+
+    # ── Claude gera APENAS: header + saudação + parágrafo introdutório ────────
+    _extra_notes = f"\nExtra context for opening paragraph: {notes}" if notes else ""
     prompt = f"""You are {USER_NAME} from {COMPANY_NAME}.
-Write a complete, professional B2B commercial proposal email in {lang_full}.
+Write the OPENING TEXT ONLY of a professional B2B commercial proposal email in {lang_full}.
 
 RECIPIENT:
   Name: {client_name}
   Company: {company or "—"}
-  Email: {client_email}
   Country: {country}
   Deal Reference: {deal_id}
+{_extra_notes}
 
-PRODUCTS TABLE DATA ({n_skus} products — include ALL rows, one per line):
-Columns: EAN | SKU | Product | Brand | PVP PT (ref.) | Unit Price (EUR) | Qty | Total (EUR)
-{product_rows}
-
-Note: "PVP PT (ref.)" is Portuguese retail price (market reference only). "Unit Price" is the agreed sale price. "Total (EUR)" = Unit Price × Qty (already calculated above).
-
-SUPPORT / EIS NOTES (use as footnotes below table if not "none"):
-{support_notes}
-
-EXTRA NOTES / SPECIAL INSTRUCTIONS: {notes or "none"}
-
-INSTRUCTIONS:
-1. Write the full email body in {lang_full}
-2. Start with the branded header (below), then <p>Dear {client_name},</p> (or equivalent in {lang_full}), then opening paragraph:
-   "Please find below our commercial proposal for your review, issued under deal reference {deal_id}. All prices are quoted in EUR and represent our best commercial conditions for the indicated quantities."
-3. Render the products table with ALL {n_skus} rows — do NOT skip, merge, or omit any product. Use the exact data from PRODUCTS TABLE DATA above.
-4. After ALL product rows are written, close the table EXACTLY like this: </tr></tbody></table>
-   Then add any SUPPORT/EIS footnotes (if any).
-   Then output EXACTLY this HTML comment on its own line: <!-- END -->
-   STOP immediately after <!-- END -->. Do NOT write anything else — no summary, no totals, no conditions, no heading, no salutation, no signature, nothing.
-   CRITICAL: <!-- END --> must appear AFTER </tbody></table>, never inside a table or open tag.
-5. Do NOT mention stock levels, warehouse addresses, payment conditions, incoterms, availability, prices summary, or totals anywhere.
-6. Be professional, concise, B2B focused.
-
-CRITICAL FORMATTING RULES — DO NOT DEVIATE UNDER ANY CIRCUMSTANCES:
-- Return ONLY raw HTML — NO markdown fences (no ```html, no ```, no backticks)
-- font-family: Aptos, Calibri, 'Segoe UI', Arial, sans-serif — NO other fonts ever
-- All table columns centered except Product column (left-aligned)
-- Use ONLY these CSS classes: note-box, summary-table, conditions, footnote, total-row
-- NEVER add inline style attributes that set colour, font-family, or background-color
-- Primary colour: #CC0000 (Worten red) ONLY — absolutely no blues, greens or other colours
-- Table alternate rows: #fdeaea — do not change
-- Section backgrounds: white only — no coloured backgrounds on divs or sections
-- NEVER invent new styles — the CSS is already defined in the wrapper
-
-Start with this EXACT branded header HTML:
+OUTPUT EXACTLY these 3 elements — nothing more:
+1. This EXACT branded header HTML (copy it verbatim):
 <div style="background:#CC0000;padding:20px 28px;border-radius:6px 6px 0 0;margin-bottom:24px;position:relative;">
   <span style="color:white;font-size:26px;font-weight:900;letter-spacing:-1px;font-family:Aptos,Calibri,'Segoe UI',Arial,sans-serif;">worten</span>
   <span style="color:#ffaaaa;font-size:13px;margin-left:16px;font-family:Aptos,Calibri,'Segoe UI',Arial,sans-serif;">International Wholesale</span>
   <span style="color:#ffcccc;font-size:12px;float:right;margin-top:8px;font-family:Aptos,Calibri,'Segoe UI',Arial,sans-serif;">Ref: {deal_id}</span>
 </div>
+
+2. Greeting: <p>Dear {client_name},</p> (or the natural equivalent in {lang_full})
+
+3. ONE opening paragraph in {lang_full} introducing this commercial proposal.
+   Reference deal {deal_id}. Mention prices are in EUR.
+   If there are extra notes, incorporate them naturally.
+   Keep it to 2-3 sentences maximum.
+
+STOP after the opening paragraph. Output EXACTLY: <!-- INTRO_END -->
+Do NOT generate any table, product list, summary, conditions, signature, or closing.
+Return ONLY raw HTML — no markdown fences.
 """
 
     response = _get_client().messages.create(
         model=CLAUDE_MODEL,
-        max_tokens=4096,
+        max_tokens=800,
         messages=[{"role": "user", "content": prompt}]
     )
 
@@ -429,48 +481,35 @@ Start with this EXACT branded header HTML:
 
     import re as _re
 
-    # 1. Remover markdown fences se Claude as incluir
+    # 1. Remover markdown fences
     if html_body.startswith("```"):
         html_body = html_body.split("\n", 1)[-1]
     if html_body.endswith("```"):
         html_body = html_body.rsplit("```", 1)[0]
     html_body = html_body.strip()
 
-    # 2. Se Claude devolveu documento HTML completo, extrair só o <body>
+    # 2. Extrair só o <body> se Claude devolveu documento completo
     if html_body.lower().startswith("<!doctype") or "<html" in html_body[:100].lower():
         body_match = _re.search(r"<body[^>]*>(.*?)</body>", html_body, _re.DOTALL | _re.IGNORECASE)
         if body_match:
             html_body = body_match.group(1).strip()
 
-    # 3. Remover font-family inline do Claude (CSS wrapper define a fonte)
+    # 3. Cortar no sentinel de intro (ou simplesmente usar tudo)
+    if '<!-- INTRO_END -->' in html_body:
+        html_body = html_body.split('<!-- INTRO_END -->')[0].strip()
+
+    # 4. Remover font-family inline
     html_body = _re.sub(r'font-family\s*:[^;"\'}]+[;]?', '', html_body, flags=_re.IGNORECASE)
     html_body = _re.sub(r'<font\s[^>]*>', '', html_body, flags=_re.IGNORECASE)
     html_body = _re.sub(r'</font>', '', html_body, flags=_re.IGNORECASE)
 
-    # 4. Remover qualquer texto de "Kind regards" / saudação gerado pelo Claude
-    html_body = _re.sub(
-        r'<p[^>]*>\s*(kind regards|best regards|com os melhores cumprimentos'
-        r'|cordialement|atentamente)[^<]*</p>',
-        '', html_body, flags=_re.IGNORECASE
-    )
-
-    # 5. Determinar ponto de corte: último </table> no output do Claude.
-    #    O sentinel <!-- END --> NÃO é confiável — Claude por vezes insere-o
-    #    ANTES de fechar a tabela, o que causa o resumo Python a ser renderizado
-    #    no meio das linhas de produto. Usar o último </table> garante sempre
-    #    que a tabela está fechada antes de appendar o resumo.
-    _last_table_pos = html_body.rfind('</table>')
-    if _last_table_pos != -1:
-        html_body = html_body[:_last_table_pos + len('</table>')]
-    elif '<!-- END -->' in html_body:
-        # Fallback: sem tabela detetada, usar sentinel
-        html_body = html_body.split('<!-- END -->')[0]
-    # Se nenhum existir, usar o output completo (Claude gerou sem tabela)
-
-    # 6. Fechar quaisquer <div> que ficaram abertos após o corte
+    # 5. Fechar <div> abertos no intro
     open_divs = len(_re.findall(r'<div\b[^>]*>', html_body)) - html_body.count('</div>')
     if open_divs > 0:
         html_body = html_body.rstrip() + ('</div>' * open_divs)
+
+    # 6. Appendar tabela de produtos (Python) + restantes secções
+    html_body = html_body.rstrip() + product_table_html
 
     # 7. Blocos Python gerados com inline styles (imunes a herança de CSS pai)
     closing = _t(language, "closing")
