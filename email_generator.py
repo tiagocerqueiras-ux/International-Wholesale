@@ -432,19 +432,22 @@ Start with this EXACT branded header HTML:
     )
 
     # Summary financeiro — gerado em Python (100% controlado)
-    _tr_even = 'background:#fdeaea;'
-    _td_s    = 'padding:7px 16px;border:none;color:#333;'
-    _td_sl   = f'{_td_s}text-align:left;width:60%;'
-    _td_sr   = f'{_td_s}text-align:right;'
-    _td_tot  = f'{_td_s}font-weight:700;text-align:left;width:60%;border-top:2px solid #CC0000;'
-    _td_torv = f'{_td_s}font-weight:700;text-align:right;border-top:2px solid #CC0000;'
+    _bg_w    = 'background:#ffffff !important;'
+    _bg_e    = 'background:#fdeaea !important;'
+    _td_base = 'padding:8px 16px;border:none;color:#333;font-size:13px;white-space:nowrap;'
+    _td_l    = f'{_td_base}{_bg_w}text-align:left;'
+    _td_r    = f'{_td_base}{_bg_w}text-align:right;'
+    _td_le   = f'{_td_base}{_bg_e}text-align:left;'
+    _td_re   = f'{_td_base}{_bg_e}text-align:right;'
+    _td_tl   = f'{_td_base}{_bg_w}text-align:left;font-weight:700;border-top:2px solid #CC0000;'
+    _td_tr   = f'{_td_base}{_bg_w}text-align:right;font-weight:700;border-top:2px solid #CC0000;'
     summary_html = (
         '\n<div style="margin:24px 0;display:flex;justify-content:flex-end;">'
-        '\n<table style="border-collapse:collapse;width:360px;font-size:13px;"><tbody>'
-        f'\n  <tr><td style="{_td_sl}">Products Subtotal</td><td style="{_td_sr}">{subtotal:,.2f} EUR</td></tr>'
-        f'\n  <tr style="{_tr_even}"><td style="{_td_sl}">Freight / Transport</td><td style="{_td_sr}">{freight_str}</td></tr>'
-        f'\n  <tr><td style="{_td_sl}">VAT</td><td style="{_td_sr}">{vat_str}</td></tr>'
-        f'\n  <tr><td style="{_td_tot}">TOTAL</td><td style="{_td_torv}">{grand_total:,.2f} EUR</td></tr>'
+        '\n<table style="border-collapse:collapse;font-size:13px;min-width:420px;"><tbody>'
+        f'\n  <tr><td style="{_td_l}">Products Subtotal</td><td style="{_td_r}">{subtotal:,.2f} EUR</td></tr>'
+        f'\n  <tr><td style="{_td_le}">Freight / Transport</td><td style="{_td_re}">{freight_str}</td></tr>'
+        f'\n  <tr><td style="{_td_l}">VAT</td><td style="{_td_r}">{vat_str}</td></tr>'
+        f'\n  <tr><td style="{_td_tl}">TOTAL</td><td style="{_td_tr}">{grand_total:,.2f} EUR</td></tr>'
         '\n</tbody></table>'
         '\n</div>'
     )
