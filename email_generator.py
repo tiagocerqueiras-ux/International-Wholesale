@@ -454,22 +454,23 @@ Start with this EXACT branded header HTML:
         '', html_body, flags=_re.IGNORECASE
     )
 
-    # 5. Cortar tudo após o sentinel <!-- END --> (inclui condições, assinatura, etc.)
-    if '<!-- END -->' in html_body:
+    # 5. Determinar ponto de corte: último </table> no output do Claude.
+    #    O sentinel <!-- END --> NÃO é confiável — Claude por vezes insere-o
+    #    ANTES de fechar a tabela, o que causa o resumo Python a ser renderizado
+    #    no meio das linhas de produto. Usar o último </table> garante sempre
+    #    que a tabela está fechada antes de appendar o resumo.
+    _last_table_pos = html_body.rfind('</table>')
+    if _last_table_pos != -1:
+        html_body = html_body[:_last_table_pos + len('</table>')]
+    elif '<!-- END -->' in html_body:
+        # Fallback: sem tabela detetada, usar sentinel
         html_body = html_body.split('<!-- END -->')[0]
+    # Se nenhum existir, usar o output completo (Claude gerou sem tabela)
 
-    # 6. Fechar quaisquer tags HTML que o Claude deixou em aberto.
-    # Ordem: do mais interno para o mais externo (td/th → tr → tbody/thead → table → div)
-    # Evita que o resumo Python seja renderizado dentro de uma <table> ainda aberta.
-    def _close_tag(h: str, tag: str) -> str:
-        opens  = len(_re.findall(rf'<{tag}[\s>]', h, _re.IGNORECASE))
-        closes = len(_re.findall(rf'</{tag}>', h, _re.IGNORECASE))
-        diff   = opens - closes
-        return (h.rstrip() + (f'</{tag}>' * diff)) if diff > 0 else h
-
-    html_body = html_body.rstrip()
-    for _unclosed_tag in ('td', 'th', 'tr', 'thead', 'tbody', 'table', 'div'):
-        html_body = _close_tag(html_body, _unclosed_tag)
+    # 6. Fechar quaisquer <div> que ficaram abertos após o corte
+    open_divs = len(_re.findall(r'<div\b[^>]*>', html_body)) - html_body.count('</div>')
+    if open_divs > 0:
+        html_body = html_body.rstrip() + ('</div>' * open_divs)
 
     # 7. Blocos Python gerados com inline styles (imunes a herança de CSS pai)
     closing = _t(language, "closing")
