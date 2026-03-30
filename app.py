@@ -999,12 +999,15 @@ elif page == "📊  Dashboard":
 
             st.divider()
             st.subheader("📊 Faturação por Comercial")
-            _sp_chart = pd.DataFrame([
+            _sp_chart_rows = [
                 {"Comercial": s["email"].split("@")[0], "Faturação": s["revenue"]}
                 for s in _sp_list if s["revenue"] > 0
-            ]).set_index("Comercial")
-            if not _sp_chart.empty:
+            ]
+            if _sp_chart_rows:
+                _sp_chart = pd.DataFrame(_sp_chart_rows).set_index("Comercial")
                 st.bar_chart(_sp_chart)
+            else:
+                st.info("Sem faturação registada para gerar o gráfico.")
 
     # ════════════════════════════════════════════════════════════════════
     with _d_tab3:

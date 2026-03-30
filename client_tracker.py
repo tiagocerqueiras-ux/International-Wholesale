@@ -716,12 +716,17 @@ def get_client_kpis(client_email: str) -> dict:
     active_deals       = 0
     last_deal_date     = None
 
-    _active_statuses   = {"Rascunho","Enviado","Em Negociação","Follow-up"}
-    _closed_statuses   = {"Fechado"}
+    _active_statuses   = {"Rascunho","Enviado","Em Negociação","Follow-up","Lead","Pedido de Cotação"}
+    _closed_statuses   = {"Faturado","Fechado","Encomenda Confirmada","Em Preparação","Expedido","Entregue"}
 
     for d in deals:
         val    = float(d.get("proposed_value") or 0)
-        pct    = float(d.get("margin_pct") or 0)
+        # margin_pct pode vir como "9.9%" (string) ou float — normalizar
+        _mpct_raw = str(d.get("margin_pct") or "0").replace("%","").strip()
+        try:
+            pct = float(_mpct_raw)
+        except (ValueError, TypeError):
+            pct = 0.0
         status = d.get("status","")
         date   = (d.get("created_at") or "")[:10]
 

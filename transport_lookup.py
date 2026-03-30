@@ -177,14 +177,25 @@ def build_transport_cache() -> dict:
 
 
 def load_transport_cache() -> dict:
-    """Carrega o cache. Reconstroi automaticamente se nao existir."""
-    if not TRANSPORT_CACHE.exists():
-        return build_transport_cache()
-    try:
-        with open(TRANSPORT_CACHE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return build_transport_cache()
+    """Carrega o cache JSON. Tenta rebuild se nao existir — só funciona se o Excel estiver disponível."""
+    # 1. Cache JSON já existe — carregar directamente
+    if TRANSPORT_CACHE.exists():
+        try:
+            with open(TRANSPORT_CACHE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass  # corrompido — tentar rebuild abaixo
+
+    # 2. Tentar rebuild a partir do Excel (apenas funciona em ambiente local)
+    if TRANSPORT_FILE.exists():
+        try:
+            return build_transport_cache()
+        except Exception as e:
+            print(f"[transport_lookup] build_transport_cache erro: {e}")
+
+    # 3. Fallback seguro — cache vazio (cloud sem Excel)
+    print("[transport_lookup] Ficheiro Excel de transporte não encontrado. Simulador desactivado.")
+    return {"destinations": {}, "countries": [], "country_cps": {}}
 
 
 def get_countries(cache: dict) -> list:
