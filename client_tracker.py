@@ -98,26 +98,38 @@ def list_clients(
     client_type: str = None,
     search: str = None,
 ) -> list:
-    try:
-        q = _get_client().table("clients").select(
-            "id,company_name,country,market,contact_name,contact_email,contact_phone,"
-            "client_type,status,brands,categories,incoterm,payment_terms,"
-            "notes,created_at,updated_at"
-        ).order("company_name")
+    _SEL = (
+        "id,company_name,country,market,contact_name,contact_email,contact_phone,"
+        "client_type,status,brands,categories,incoterm,payment_terms,"
+        "notes,created_at,updated_at"
+    )
+
+    def _base_q():
+        """Query base com filtros fixos (sem search)."""
+        q = _get_client().table("clients").select(_SEL).order("company_name")
         if status:      q = q.eq("status", status)
         if market:      q = q.eq("market", market)
         if country:     q = q.ilike("country", f"%{country}%")
         if client_type: q = q.eq("client_type", client_type)
-        if search:
-            # Pesquisar em company_name, contact_name e contact_email (OR)
-            s = search.replace("%", "").replace("'", "")
-            q = q.or_(
-                f"company_name.ilike.%{s}%,"
-                f"contact_name.ilike.%{s}%,"
-                f"contact_email.ilike.%{s}%"
-            )
-        res = q.execute()
-        return res.data or []
+        return q
+
+    try:
+        if not search:
+            return _base_q().execute().data or []
+
+        # OR search: 3 queries separadas (ilike directo) + merge por id
+        s = search.replace("%", "").replace("'", "").strip()
+        seen: set = set()
+        results: list = []
+        for field in ("company_name", "contact_name", "contact_email"):
+            rows = (_base_q().ilike(field, f"%{s}%").execute().data or [])
+            for row in rows:
+                if row["id"] not in seen:
+                    seen.add(row["id"])
+                    results.append(row)
+        results.sort(key=lambda x: (x.get("company_name") or "").lower())
+        return results
+
     except Exception as e:
         print(f"[client_tracker] list_clients erro: {e}")
         return []
