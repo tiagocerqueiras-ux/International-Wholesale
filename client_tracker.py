@@ -748,7 +748,7 @@ def get_client_kpis(client_email: str) -> dict:
     last_deal_date     = None
 
     _active_statuses   = {"Rascunho","Enviado","Em Negociação","Follow-up","Lead","Pedido de Cotação"}
-    _closed_statuses   = {"Faturado","Fechado","Encomenda Confirmada","Em Preparação","Expedido","Entregue"}
+    _closed_statuses   = {"Faturado","Encomenda Confirmada","Em Preparação","Expedido","Entregue"}
 
     for d in deals:
         val    = float(d.get("proposed_value") or 0)

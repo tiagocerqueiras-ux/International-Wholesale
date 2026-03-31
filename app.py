@@ -1639,7 +1639,7 @@ elif page == "📋  Deals em Curso":
                                     if admin_to:
                                         ok, e = create_draft(admin_to, f"{subj} | Administrativo", admin_html, send=True)
                                         if not ok: errs.append(f"Admin: {e}")
-                                    update_status(did, "Fechado", f"Deal fechado. Saída: {dep_date}")
+                                    update_status(did, "Encomenda Confirmada", f"Encomenda confirmada. Saída prevista: {dep_date}")
                                     if errs:
                                         st.error("Erros: " + " | ".join(errs))
                                     else:
