@@ -557,15 +557,15 @@ def get_contacts(client_id: str) -> list:
 
     # Auto-migração: se não há contactos mas existem campos individuais
     if not contacts:
-        name  = client.get("contact_name", "").strip()
-        email = client.get("contact_email", "").strip()
+        name  = (client.get("contact_name")  or "").strip()
+        email = (client.get("contact_email") or "").strip()
         if name or email:
             contacts = [{
                 "name":      name,
-                "role":      client.get("contact_role", ""),
+                "role":      (client.get("contact_role")    or ""),
                 "email":     email,
-                "phone":     client.get("contact_phone", ""),
-                "linkedin":  client.get("contact_linkedin", ""),
+                "phone":     (client.get("contact_phone")   or ""),
+                "linkedin":  (client.get("contact_linkedin") or ""),
                 "primary":   True,
                 "notes":     "",
             }]
