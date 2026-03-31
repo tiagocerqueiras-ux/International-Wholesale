@@ -1869,14 +1869,23 @@ elif page == "👥  CRM — Clientes":
         # ── Autocomplete: aplicar sugestão pendente antes do widget ──────────
         if "crm_search_pending" in st.session_state:
             st.session_state["crm_search"] = st.session_state.pop("crm_search_pending")
+        # Limpar todos os filtros
+        if st.session_state.get("_crm_clear"):
+            for _k in ("crm_search","crm_status","crm_market","crm_type","crm_country"):
+                st.session_state.pop(_k, None)
+            st.session_state.pop("_crm_clear", None)
 
         # Filtros
-        fc1, fc2, fc3, fc4, fc5 = st.columns([2, 1.5, 1.5, 1.5, 1.5])
+        fc1, fc2, fc3, fc4, fc5, fc6 = st.columns([2, 1.3, 1.3, 1.3, 1.3, 0.8])
         crm_search   = fc1.text_input("Pesquisar empresa", placeholder="Nome, contacto ou email...", key="crm_search")
         crm_status   = fc2.selectbox("Status", ["Todos"] + CLIENT_STATUSES, key="crm_status")
         crm_market   = fc3.selectbox("Mercado", ["Todos"] + MARKETS, key="crm_market")
         crm_type     = fc4.selectbox("Tipo", ["Todos"] + CLIENT_TYPES, key="crm_type")
         crm_country  = fc5.text_input("País", placeholder="Ex: Poland", key="crm_country")
+        fc6.markdown("<br>", unsafe_allow_html=True)
+        if fc6.button("🗑️ Limpar", key="crm_clear_btn", use_container_width=True):
+            st.session_state["_crm_clear"] = True
+            st.rerun()
 
         # ── Sugestões de autocomplete ─────────────────────────────────────────
         if crm_search and len(crm_search) >= 2:
@@ -1914,7 +1923,20 @@ elif page == "👥  CRM — Clientes":
         st.caption(f"{len(clients)} cliente(s)")
 
         if not clients:
-            st.info("Sem clientes para os filtros selecionados.")
+            _active_filters = []
+            if crm_search:  _active_filters.append(f"**Pesquisa:** '{crm_search}'")
+            if crm_country: _active_filters.append(f"**País:** '{crm_country}'")
+            if crm_status != "Todos": _active_filters.append(f"**Status:** {crm_status}")
+            if crm_market != "Todos": _active_filters.append(f"**Mercado:** {crm_market}")
+            if crm_type   != "Todos": _active_filters.append(f"**Tipo:** {crm_type}")
+            if _active_filters:
+                st.warning(
+                    f"0 resultados com os filtros activos: {' · '.join(_active_filters)}.  \n"
+                    "💡 Clica **🗑️ Limpar** para remover todos os filtros, ou apaga o campo **País** — "
+                    "o valor guardado pode não coincidir com o país no filtro."
+                )
+            else:
+                st.info("Sem clientes na base de dados. Adiciona o primeiro em **➕ Novo Cliente**.")
         else:
             STATUS_ICON = {"Ativo":"🟢","Inativo":"⚫","Prospeto":"🔵","Bloqueado":"🔴"}
             for c in clients:
