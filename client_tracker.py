@@ -108,7 +108,14 @@ def list_clients(
         if market:      q = q.eq("market", market)
         if country:     q = q.ilike("country", f"%{country}%")
         if client_type: q = q.eq("client_type", client_type)
-        if search:      q = q.ilike("company_name", f"%{search}%")
+        if search:
+            # Pesquisar em company_name, contact_name e contact_email (OR)
+            s = search.replace("%", "").replace("'", "")
+            q = q.or_(
+                f"company_name.ilike.%{s}%,"
+                f"contact_name.ilike.%{s}%,"
+                f"contact_email.ilike.%{s}%"
+            )
         res = q.execute()
         return res.data or []
     except Exception as e:

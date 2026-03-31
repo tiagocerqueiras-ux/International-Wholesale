@@ -1914,7 +1914,7 @@ elif page == "👥  CRM — Clientes":
                     if cemail:
                         _kpis = get_client_kpis(cemail)
                         _k1, _k2, _k3, _k4, _k5 = st.columns(5)
-                        _k1.metric("Faturado (Fechado)", f"{_kpis['total_revenue']:,.0f} €")
+                        _k1.metric("Faturação Total", f"{_kpis['total_revenue']:,.0f} €")
                         _k2.metric("Margem Média", f"{_kpis['avg_margin']:.1f}%")
                         _k3.metric("Total Deals", _kpis['deal_count'])
                         _k4.metric("Pipeline Ativo", f"{_kpis['active_pipeline']:,.0f} €")
@@ -2060,7 +2060,7 @@ elif page == "👥  CRM — Clientes":
                                             key=f"ctr_{cid}_{_ci}")
                                         _ec3, _ec4 = st.columns(2)
                                         _ct_email  = _ec3.text_input("Email", value=_ct.get("email",""), key=f"cte_{cid}_{_ci}")
-                                        _ct_phone  = _ec4.text_input("Telefone", value=_ct.get("phone",""), key=f"ctp_{cid}_{_ci}")
+                                        _ct_phone  = _ec4.text_input("Telefone", value=_ct.get("phone",""), placeholder="+48 600 000 000", key=f"ctp_{cid}_{_ci}")
                                         _ct_link   = st.text_input("LinkedIn", value=_ct.get("linkedin",""), key=f"ctl_{cid}_{_ci}")
                                         _ct_notes  = st.text_input("Notas", value=_ct.get("notes",""), key=f"ctno_{cid}_{_ci}")
                                         if st.button("💾 Guardar contacto", key=f"ctsave_{cid}_{_ci}"):
@@ -2089,7 +2089,7 @@ elif page == "👥  CRM — Clientes":
                         _new_ct_role  = _na2.selectbox("Cargo / Função", [""] + CONTACT_ROLES, key=f"nct_role_{cid}")
                         _na3, _na4    = st.columns(2)
                         _new_ct_email = _na3.text_input("Email", key=f"nct_email_{cid}")
-                        _new_ct_phone = _na4.text_input("Telefone", key=f"nct_phone_{cid}")
+                        _new_ct_phone = _na4.text_input("Telefone", placeholder="+48 600 000 000", key=f"nct_phone_{cid}")
                         _new_ct_link  = st.text_input("LinkedIn", key=f"nct_link_{cid}")
                         _new_ct_notes = st.text_input("Notas", key=f"nct_notes_{cid}")
                         _set_primary  = st.checkbox("Definir como contacto principal", key=f"nct_prim_{cid}",
@@ -2304,7 +2304,7 @@ elif page == "👥  CRM — Clientes":
         new_cname    = c1.text_input("Nome", key="new_cname")
         new_crole    = c2.text_input("Cargo", key="new_crole")
         new_cemail   = c3.text_input("Email *", key="new_cemail")
-        new_cphone   = c4.text_input("Telefone", key="new_cphone")
+        new_cphone   = c4.text_input("Telefone", placeholder="+48 600 000 000", key="new_cphone", help="Inclui sempre o indicativo do país, ex: +48 (PL), +40 (RO), +359 (BG)")
         new_linkedin = st.text_input("LinkedIn", key="new_linkedin")
 
         st.markdown("**Condições Comerciais**")
@@ -2755,7 +2755,7 @@ elif page == "🤝  Fornecedores":
                                             key=f"sctr_{sid}_{_sci}")
                                         _sec3, _sec4 = st.columns(2)
                                         _sct_email = _sec3.text_input("Email", value=_sct.get("email",""), key=f"scte_{sid}_{_sci}")
-                                        _sct_phone = _sec4.text_input("Telefone", value=_sct.get("phone",""), key=f"sctp_{sid}_{_sci}")
+                                        _sct_phone = _sec4.text_input("Telefone", value=_sct.get("phone",""), placeholder="+48 600 000 000", key=f"sctp_{sid}_{_sci}")
                                         _sct_link  = st.text_input("LinkedIn", value=_sct.get("linkedin",""), key=f"sctl_{sid}_{_sci}")
                                         _sct_notes = st.text_input("Notas", value=_sct.get("notes",""), key=f"sctno_{sid}_{_sci}")
                                         if st.button("💾 Guardar contacto", key=f"sctsave_{sid}_{_sci}"):
@@ -2779,7 +2779,7 @@ elif page == "🤝  Fornecedores":
                         _snct_role  = _sna2.selectbox("Cargo / Função", [""] + SUP_ROLES, key=f"snct_role_{sid}")
                         _sna3, _sna4 = st.columns(2)
                         _snct_email = _sna3.text_input("Email", key=f"snct_email_{sid}")
-                        _snct_phone = _sna4.text_input("Telefone", key=f"snct_phone_{sid}")
+                        _snct_phone = _sna4.text_input("Telefone", placeholder="+48 600 000 000", key=f"snct_phone_{sid}")
                         _snct_link  = st.text_input("LinkedIn", key=f"snct_link_{sid}")
                         _snct_notes = st.text_input("Notas", key=f"snct_notes_{sid}")
                         _snct_prim  = st.checkbox("Definir como contacto principal",
@@ -2890,7 +2890,7 @@ elif page == "🤝  Fornecedores":
         ns_cname   = sc1.text_input("Nome", key="ns_cname")
         ns_crole   = sc2.selectbox("Cargo", [""] + SUP_ROLES, key="ns_crole")
         ns_cemail  = sc3.text_input("Email *", key="ns_cemail")
-        ns_cphone  = sc4.text_input("Telefone", key="ns_cphone")
+        ns_cphone  = sc4.text_input("Telefone", placeholder="+48 600 000 000", key="ns_cphone", help="Inclui sempre o indicativo do país")
         ns_clinked = st.text_input("LinkedIn", key="ns_clinked")
 
         st.markdown("**Condições Comerciais**")
