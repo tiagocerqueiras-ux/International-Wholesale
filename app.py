@@ -35,6 +35,7 @@ from client_tracker import (
     get_contacts, save_contacts, enrich_brands_from_deals,
     get_client_kpis, smart_segment,
     get_client_documents, add_client_document, delete_client_document,
+    get_company_names,
     COUNTRY_PHONE_CODES, CONTACT_ROLES,
     CLIENT_STATUSES, CLIENT_TYPES, MARKETS, BRANDS_LIST, CATEGORIES_LIST,
 )
@@ -83,6 +84,10 @@ def load_index():
 @st.cache_data(show_spinner="A carregar tarifas de transporte...", ttl=7200)
 def load_transport():
     return load_transport_cache()
+
+@st.cache_data(ttl=120)   # 2 min — lista de nomes para autocomplete
+def _cached_company_names():
+    return get_company_names()
 
 def fmt2(v):
     if v is None or v == "": return "—"
@@ -1861,13 +1866,42 @@ elif page == "👥  CRM — Clientes":
     # TAB 1 — LISTA
     # ════════════════════════════════════════════════════════════════════════
     with tab_list:
+        # ── Autocomplete: aplicar sugestão pendente antes do widget ──────────
+        if "crm_search_pending" in st.session_state:
+            st.session_state["crm_search"] = st.session_state.pop("crm_search_pending")
+
         # Filtros
         fc1, fc2, fc3, fc4, fc5 = st.columns([2, 1.5, 1.5, 1.5, 1.5])
-        crm_search   = fc1.text_input("Pesquisar empresa", placeholder="Nome...", key="crm_search")
+        crm_search   = fc1.text_input("Pesquisar empresa", placeholder="Nome, contacto ou email...", key="crm_search")
         crm_status   = fc2.selectbox("Status", ["Todos"] + CLIENT_STATUSES, key="crm_status")
         crm_market   = fc3.selectbox("Mercado", ["Todos"] + MARKETS, key="crm_market")
         crm_type     = fc4.selectbox("Tipo", ["Todos"] + CLIENT_TYPES, key="crm_type")
         crm_country  = fc5.text_input("País", placeholder="Ex: Poland", key="crm_country")
+
+        # ── Sugestões de autocomplete ─────────────────────────────────────────
+        if crm_search and len(crm_search) >= 2:
+            _all_names = _cached_company_names()
+            _q_low = crm_search.lower()
+            _matches = [n for n in _all_names if _q_low in n.lower()][:6]
+            # Só mostrar se ainda não é correspondência exacta
+            if _matches and not (_matches[0].lower() == _q_low and len(_matches) == 1):
+                _sug_cols = fc1.columns(min(len(_matches), 3))
+                for _si, _sug in enumerate(_matches[:3]):
+                    if _sug_cols[_si].button(
+                        f"↳ {_sug[:28]}", key=f"crm_ac_{_si}",
+                        use_container_width=True
+                    ):
+                        st.session_state["crm_search_pending"] = _sug
+                        st.rerun()
+                if len(_matches) > 3:
+                    _sug_cols2 = fc1.columns(min(len(_matches) - 3, 3))
+                    for _si2, _sug2 in enumerate(_matches[3:6]):
+                        if _sug_cols2[_si2].button(
+                            f"↳ {_sug2[:28]}", key=f"crm_ac2_{_si2}",
+                            use_container_width=True
+                        ):
+                            st.session_state["crm_search_pending"] = _sug2
+                            st.rerun()
 
         clients = list_clients(
             status      = None if crm_status  == "Todos" else crm_status,

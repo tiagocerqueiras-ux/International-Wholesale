@@ -123,6 +123,18 @@ def list_clients(
         return []
 
 
+def get_company_names() -> list[str]:
+    """Devolve lista ordenada de nomes de empresas — usado para autocomplete."""
+    try:
+        res = (_get_client().table("clients")
+               .select("company_name")
+               .order("company_name")
+               .execute())
+        return [r["company_name"] for r in (res.data or []) if r.get("company_name")]
+    except Exception:
+        return []
+
+
 def count_clients() -> int:
     try:
         res = _get_client().table("clients").select("id", count="exact").execute()
