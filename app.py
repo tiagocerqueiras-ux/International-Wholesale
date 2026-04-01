@@ -853,21 +853,80 @@ elif page == "📊  Dashboard":
     import pandas as pd
     st.title("📊 Dashboard Executivo — BoxMovers")
 
-    # Filtros
-    _db_c1, _db_c2, _db_c3 = st.columns([2, 2, 4])
-    _current_year = datetime.now().year
-    _db_year = _db_c1.selectbox(
-        "Ano", [None, _current_year, _current_year - 1],
-        format_func=lambda x: "Todos os anos" if x is None else str(x),
-        key="db_year",
-    )
+    # ── Filtros de período ────────────────────────────────────────────────────
+    from datetime import date, timedelta
+    _today        = date.today()
+    _current_year = _today.year
+
+    _db_fc1, _db_fc2 = st.columns([3, 3])
+
+    _PERIOD_OPTIONS = [
+        "📅 Ano civil",
+        "🔄 Últimos 12 meses",
+        "🔄 Últimos 6 meses",
+        "🔄 Últimos 3 meses",
+        "🗓️ Período personalizado",
+        "🗂️ Todos os dados",
+    ]
+    _period_type = _db_fc1.selectbox("Período de análise", _PERIOD_OPTIONS, key="db_period_type")
+
+    # Calcular date_from / date_to e year consoante a selecção
+    _db_year      = None
+    _db_date_from = None
+    _db_date_to   = None
+
+    if _period_type == "📅 Ano civil":
+        _db_year = _db_fc2.selectbox(
+            "Ano", [_current_year, _current_year - 1, None],
+            format_func=lambda x: "Todos os anos" if x is None else str(x),
+            key="db_year",
+        )
+
+    elif _period_type == "🔄 Últimos 12 meses":
+        _db_date_from = str(_today - timedelta(days=365))[:10]
+        _db_date_to   = str(_today)
+        _db_fc2.info(f"📆 {_db_date_from} → {_db_date_to}")
+
+    elif _period_type == "🔄 Últimos 6 meses":
+        _db_date_from = str(_today - timedelta(days=183))[:10]
+        _db_date_to   = str(_today)
+        _db_fc2.info(f"📆 {_db_date_from} → {_db_date_to}")
+
+    elif _period_type == "🔄 Últimos 3 meses":
+        _db_date_from = str(_today - timedelta(days=91))[:10]
+        _db_date_to   = str(_today)
+        _db_fc2.info(f"📆 {_db_date_from} → {_db_date_to}")
+
+    elif _period_type == "🗓️ Período personalizado":
+        _pc1, _pc2 = _db_fc2.columns(2)
+        # Seletor mês/ano início
+        _years_avail = list(range(_current_year - 2, _current_year + 1))
+        _months_pt   = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"]
+        _from_year  = _pc1.selectbox("Ano início",  _years_avail, index=len(_years_avail)-2, key="db_from_year")
+        _from_month = _pc1.selectbox("Mês início",  range(1,13), format_func=lambda m: _months_pt[m-1], key="db_from_month")
+        _to_year    = _pc2.selectbox("Ano fim",     _years_avail, index=len(_years_avail)-1, key="db_to_year")
+        _to_month   = _pc2.selectbox("Mês fim",     range(1,13), format_func=lambda m: _months_pt[m-1],
+                                     index=_today.month - 1, key="db_to_month")
+        import calendar
+        _db_date_from = f"{_from_year}-{_from_month:02d}-01"
+        _db_date_to   = f"{_to_year}-{_to_month:02d}-{calendar.monthrange(_to_year, _to_month)[1]:02d}"
+
+    # else "Todos os dados" → tudo None
+
+    # Filtro por comercial
     _db_sp_filter = None
     if _role in OWN_DATA_ONLY:
         _db_sp_filter = _cu.get("email")
     elif _role == "comercial_interno":
-        _db_own = _db_c2.checkbox("Apenas os meus deals", value=False, key="db_own")
+        _db_own = _db_fc1.checkbox("Apenas os meus deals", value=False, key="db_own")
         if _db_own:
             _db_sp_filter = _cu.get("email")
+
+    # Cache key — invalida automaticamente quando o período muda
+    _dash_cache_key = f"{_period_type}|{_db_year}|{_db_date_from}|{_db_date_to}|{_db_sp_filter}"
+    if st.session_state.get("_dash_cache_key") != _dash_cache_key:
+        st.session_state.pop("exec_dash", None)
+        st.session_state["_dash_cache_key"] = _dash_cache_key
 
     if st.button("🔄 Actualizar Dashboard", key="btn_db_refresh", type="primary"):
         st.session_state.pop("exec_dash", None)
@@ -877,6 +936,8 @@ elif page == "📊  Dashboard":
             st.session_state["exec_dash"] = get_executive_dashboard_data(
                 year=_db_year,
                 salesperson_filter=_db_sp_filter,
+                date_from=_db_date_from,
+                date_to=_db_date_to,
             )
 
     _dash = st.session_state.get("exec_dash", {})

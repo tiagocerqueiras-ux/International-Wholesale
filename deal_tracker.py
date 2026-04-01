@@ -478,9 +478,18 @@ def deal_products_table(deal: dict) -> list[dict]:
     return rows
 
 
-def get_executive_dashboard_data(year: int = None, salesperson_filter: str = None) -> dict:
+def get_executive_dashboard_data(
+    year: int = None,
+    salesperson_filter: str = None,
+    date_from: str = None,   # "YYYY-MM-DD" — início do período (inclusive)
+    date_to:   str = None,   # "YYYY-MM-DD" — fim do período (inclusive)
+) -> dict:
     """
     Agrega dados para o Dashboard Executivo.
+    Filtros de período (por ordem de prioridade):
+      1. date_from + date_to  → janela exacta (rolling 6/12 meses, custom…)
+      2. year                 → filtra por ano civil
+      3. (nenhum)             → todos os dados
     Devolve: revenue, pipeline, margin, P&L estimado, por comercial, por mês.
     """
     from config import (PIPELINE_CLOSED_STATUSES, PIPELINE_ACTIVE_STATUSES,
@@ -500,14 +509,19 @@ def get_executive_dashboard_data(year: int = None, salesperson_filter: str = Non
         )
         if salesperson_filter:
             q = q.ilike("salesperson_email", salesperson_filter)
+        # Filtro de datas no lado do servidor quando possível
+        if date_from:
+            q = q.gte("created_at", date_from)
+        if date_to:
+            q = q.lte("created_at", date_to)
         res = q.execute()
         rows = res.data or []
     except Exception as e:
         print(f"[deal_tracker] get_executive_dashboard_data erro: {e}")
         return {}
 
-    # Filter by year if requested
-    if year:
+    # Filtro por ano civil (só se não foram passadas datas explícitas)
+    if year and not date_from and not date_to:
         rows = [r for r in rows if str(r.get("created_at","")).startswith(str(year))]
 
     # ── Categorize ────────────────────────────────────────────────────────
