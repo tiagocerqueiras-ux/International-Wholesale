@@ -116,6 +116,9 @@ def _clear_state():
 # ── Dialog aprovação email ────────────────────────────────────────────────────
 @st.dialog("📧 Revisão do Email — Aprovação Necessária", width="large")
 def email_approval_dialog():
+    from config import RESEND_API_KEY
+    import platform as _plat
+
     pending   = st.session_state.get("pending_email", {})
     html_body = pending.get("html_body", "")
     did       = pending.get("deal_id", "")
@@ -123,6 +126,19 @@ def email_approval_dialog():
     language  = pending.get("language", "EN")
     client    = pending.get("client_name", "")
     _company  = pending.get("company", "")
+
+    # Detectar modo de envio disponível
+    _can_resend  = bool(RESEND_API_KEY)
+    _can_outlook = (_plat.system() == "Windows")
+    _can_send    = _can_resend or _can_outlook
+
+    if not _can_send:
+        st.warning(
+            "⚠️ **Envio automático não configurado.**  \n"
+            "Usa o botão **Download HTML** para guardar o email e envia manualmente pelo Outlook.  \n"
+            "Para ativar o envio automático: adiciona `RESEND_API_KEY` nas variáveis do Railway.",
+            icon="📬"
+        )
 
     st.markdown("Revê o email antes de enviar.")
     st.divider()
@@ -138,10 +154,16 @@ def email_approval_dialog():
                               help="Separa vários emails com ;")
     st.caption(f"**Assunto:** {subject}")
 
-    c1, c2, c3 = st.columns([3, 2, 2])
+    # Mostrar erro persistente de tentativas anteriores
+    if st.session_state.get("_email_send_error"):
+        st.error(f"❌ {st.session_state['_email_send_error']}")
+
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 2])
 
     with c1:
-        if st.button("🚀  Enviar Email", type="primary", use_container_width=True):
+        _btn_label = "🚀  Enviar Email" if _can_send else "🚀  Enviar (sem config)"
+        if st.button(_btn_label, type="primary", use_container_width=True, disabled=not _dlg_to):
+            st.session_state.pop("_email_send_error", None)
             _cc_list  = [e.strip() for e in _dlg_cc.split(";")  if e.strip()] or None
             _bcc_list = [e.strip() for e in _dlg_bcc.split(";") if e.strip()] or None
             ok, err = create_draft(
@@ -151,24 +173,42 @@ def email_approval_dialog():
             if ok:
                 save_email_html(did, html_body, "proposal")
                 update_margin(did, pending.get("margin_calc", 0), pending.get("pvp_total", 0))
-                update_status(did, "Enviado", "Email enviado via SMTP")
+                _method = "Outlook" if (not _can_resend and _can_outlook) else "Resend"
+                update_status(did, "Enviado", f"Email enviado via {_method}")
                 st.session_state["email_result"] = {"success": True, "deal_id": did,
-                                                     "msg": "Email enviado com sucesso!"}
+                                                     "msg": f"Email enviado via {_method}!"}
                 st.session_state.pop("pending_email", None)
+                st.session_state.pop("_email_send_error", None)
                 _clear_state()
                 st.rerun()
             else:
-                st.error(f"Erro ao enviar: {err}")
+                # Guardar erro no session_state para persistir no próximo render
+                st.session_state["_email_send_error"] = err
+                st.rerun()
 
     with c2:
-        if st.button("🔄  Regenerar", use_container_width=True):
-            st.session_state.pop("pending_email", None)
-            st.rerun()
+        # Download HTML — sempre disponível como fallback
+        _fname = f"{did}_{client[:20].replace(' ','_')}_proposta.html"
+        st.download_button(
+            "📥  Download HTML",
+            data=html_body.encode("utf-8"),
+            file_name=_fname,
+            mime="text/html",
+            use_container_width=True,
+            help="Guarda o email como ficheiro HTML e abre-o no Outlook para enviar"
+        )
 
     with c3:
+        if st.button("🔄  Regenerar", use_container_width=True):
+            st.session_state.pop("pending_email", None)
+            st.session_state.pop("_email_send_error", None)
+            st.rerun()
+
+    with c4:
         if st.button("❌  Cancelar", use_container_width=True):
             if did: update_status(did, "Rascunho", "Cancelado na revisão")
             st.session_state.pop("pending_email", None)
+            st.session_state.pop("_email_send_error", None)
             st.rerun()
 
 # ══════════════════════════════════════════════════════════════════════════════
