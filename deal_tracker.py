@@ -589,13 +589,23 @@ def get_executive_dashboard_data(year: int = None, salesperson_filter: str = Non
         })
     sp_list.sort(key=lambda x: -x["revenue"])
 
-    # ── Monthly revenue ───────────────────────────────────────────────────
-    monthly: dict = {}
+    # ── Monthly revenue + margin + proveito ──────────────────────────────
+    monthly:          dict = {}
+    monthly_margin:   dict = {}
+    monthly_proveito: dict = {}
     for r in revenue_rows:
         dt_str = str(r.get("created_at",""))[:7]  # "YYYY-MM"
         if dt_str and len(dt_str) == 7:
-            monthly[dt_str] = round(monthly.get(dt_str, 0.0) + _val(r), 2)
-    monthly_sorted = dict(sorted(monthly.items()))
+            v      = _val(r)
+            mg_pct = _parse_margin(r.get("margin_pct"))   # e.g. 5.3 (percent)
+            mg_val = round(v * mg_pct / 100, 2)           # margem bruta €
+            prov   = round(mg_val * BP_OUR_CUT_PCT, 2)    # proveito BoxMovers €
+            monthly[dt_str]          = round(monthly.get(dt_str, 0.0)          + v,      2)
+            monthly_margin[dt_str]   = round(monthly_margin.get(dt_str, 0.0)   + mg_val, 2)
+            monthly_proveito[dt_str] = round(monthly_proveito.get(dt_str, 0.0) + prov,   2)
+    monthly_sorted          = dict(sorted(monthly.items()))
+    monthly_margin_sorted   = dict(sorted(monthly_margin.items()))
+    monthly_proveito_sorted = dict(sorted(monthly_proveito.items()))
 
     # ── Deals by status count ─────────────────────────────────────────────
     status_counts: dict = {}
@@ -615,5 +625,7 @@ def get_executive_dashboard_data(year: int = None, salesperson_filter: str = Non
         "lost_deals":          len(lost_rows),
         "by_salesperson":      sp_list,
         "monthly_revenue":     monthly_sorted,
+        "monthly_margin":      monthly_margin_sorted,
+        "monthly_proveito":    monthly_proveito_sorted,
         "status_counts":       status_counts,
     }

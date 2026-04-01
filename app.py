@@ -1017,41 +1017,75 @@ elif page == "📊  Dashboard":
     # ════════════════════════════════════════════════════════════════════
     with _d_tab3:
         st.subheader("📅 Evolução Mensal da Faturação")
-        _monthly = _dash.get("monthly_revenue", {})
+        _monthly          = _dash.get("monthly_revenue",  {})
+        _monthly_margin   = _dash.get("monthly_margin",   {})
+        _monthly_proveito = _dash.get("monthly_proveito", {})
         if not _monthly:
             st.info("Sem dados mensais disponíveis.  \n_Nota: os meses são calculados pela data de criação dos deals._")
         else:
+            # ── Gráfico de barras — Faturação ─────────────────────────────
             _m_df = pd.DataFrame([
                 {"Mês": k, "Faturação (€)": v}
                 for k, v in _monthly.items()
             ]).set_index("Mês")
-            st.bar_chart(_m_df)
+            st.bar_chart(_m_df, color="#CC0000")
 
-            # Cumulative
+            # ── Gráfico de linhas — Margem Bruta + Proveito BoxMovers ─────
+            _all_months = sorted(set(_monthly) | set(_monthly_margin) | set(_monthly_proveito))
+            _mg_rows = []
+            for _mk in _all_months:
+                _mg_rows.append({
+                    "Mês":                    _mk,
+                    "Margem Bruta Worten (€)": _monthly_margin.get(_mk, 0.0),
+                    "Proveito BoxMovers (€)":  _monthly_proveito.get(_mk, 0.0),
+                })
+            _mg_df = pd.DataFrame(_mg_rows).set_index("Mês")
+            st.caption("📊 Margem bruta Worten e proveito BoxMovers por mês (escala €)")
+            st.line_chart(_mg_df, color=["#FF8C00", "#00AA44"])
+
+            st.divider()
+
+            # ── Tabela acumulada com margem e proveito ────────────────────
             _cum_total = 0.0
+            _cum_mg    = 0.0
+            _cum_prov  = 0.0
             _cum_rows  = []
-            for _mk, _mv in _monthly.items():
+            for _mk in sorted(_monthly.keys()):
+                _mv   = _monthly.get(_mk, 0.0)
+                _mgv  = _monthly_margin.get(_mk, 0.0)
+                _prov = _monthly_proveito.get(_mk, 0.0)
                 _cum_total += _mv
+                _cum_mg    += _mgv
+                _cum_prov  += _prov
+                _mg_pct_m  = _mgv / _mv * 100 if _mv else 0.0
                 _cum_rows.append({
-                    "Mês":               _mk,
-                    "Mensal (€)":        f"{_mv:,.2f}",
-                    "Acumulado (€)":     f"{_cum_total:,.2f}",
-                    "% do Alvo Anual":   f"{_cum_total / BP_TARGET_REVENUE * 100:.1f}%",
+                    "Mês":                     _mk,
+                    "Faturação (€)":           f"{_mv:,.0f}",
+                    "Margem Bruta (€)":        f"{_mgv:,.0f}",
+                    "Margem %":                f"{_mg_pct_m:.1f}%",
+                    "Proveito BM (€)":         f"{_prov:,.0f}",
+                    "Acumulado Fat. (€)":      f"{_cum_total:,.0f}",
+                    "Acumulado Prov. (€)":     f"{_cum_prov:,.0f}",
+                    "% Alvo Anual":            f"{_cum_total / BP_TARGET_REVENUE * 100:.1f}%",
                 })
             st.dataframe(pd.DataFrame(_cum_rows), use_container_width=True, hide_index=True)
 
-            # Annualized projection
+            # ── Projecções ────────────────────────────────────────────────
             _months_with_data = len(_monthly)
             if _months_with_data > 0:
-                _annualized = round(_cum_total / _months_with_data * 12, 0)
+                _annualized      = round(_cum_total / _months_with_data * 12, 0)
+                _annualized_prov = round(_cum_prov  / _months_with_data * 12, 0)
                 st.divider()
-                _pr1, _pr2, _pr3 = st.columns(3)
-                _pr1.metric("📈 Projecção Anualizada", f"{_annualized:,.0f} €",
+                _pr1, _pr2, _pr3, _pr4 = st.columns(4)
+                _pr1.metric("📈 Projecção Faturação", f"{_annualized:,.0f} €",
                             delta=f"vs alvo {BP_TARGET_REVENUE/1e6:.0f}M: {_annualized-BP_TARGET_REVENUE:+,.0f} €",
                             delta_color="normal" if _annualized >= BP_TARGET_REVENUE else "inverse")
-                _pr2.metric("🎯 vs Break-Even", f"{_annualized / BP_BREAK_EVEN * 100:.1f}%",
+                _pr2.metric("💰 Projecção Proveito BM", f"{_annualized_prov:,.0f} €",
+                            delta=f"vs alvo 100k: {_annualized_prov-100_000:+,.0f} €",
+                            delta_color="normal" if _annualized_prov >= 100_000 else "inverse")
+                _pr3.metric("🎯 vs Break-Even", f"{_annualized / BP_BREAK_EVEN * 100:.1f}%",
                             delta="✅ Acima" if _annualized >= BP_BREAK_EVEN else "❌ Abaixo")
-                _pr3.metric("📊 vs Cenário Base", f"{_annualized / BP_SCENARIO_BASE * 100:.1f}%",
+                _pr4.metric("📊 vs Cenário Base", f"{_annualized / BP_SCENARIO_BASE * 100:.1f}%",
                             delta=f"Base: {BP_SCENARIO_BASE/1e6:.0f}M €")
 
 # ══════════════════════════════════════════════════════════════════════════════
