@@ -1173,8 +1173,7 @@ elif page == "📊  Dashboard":
                 plot_bgcolor="#FAFAFA",
                 paper_bgcolor="white",
                 yaxis=dict(
-                    title="Faturação (€)",
-                    titlefont=dict(color="#2C5F8A", size=12),
+                    title=dict(text="Faturação (€)", font=dict(color="#2C5F8A", size=12)),
                     tickfont=dict(color="#2C5F8A", size=11),
                     tickformat=",.0f",
                     showgrid=True,
@@ -1183,8 +1182,7 @@ elif page == "📊  Dashboard":
                     zeroline=False,
                 ),
                 yaxis2=dict(
-                    title="Margem / Proveito (€)",
-                    titlefont=dict(color="#C47D00", size=12),
+                    title=dict(text="Margem / Proveito (€)", font=dict(color="#C47D00", size=12)),
                     tickfont=dict(color="#C47D00", size=11),
                     tickformat=",.0f",
                     overlaying="y",
