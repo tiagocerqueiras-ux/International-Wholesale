@@ -1115,25 +1115,72 @@ elif page == "📊  Dashboard":
         if not _monthly:
             st.info("Sem dados mensais disponíveis.  \n_Nota: os meses são calculados pela data de criação dos deals._")
         else:
-            # ── Gráfico de barras — Faturação ─────────────────────────────
-            _m_df = pd.DataFrame([
-                {"Mês": k, "Faturação (€)": v}
-                for k, v in _monthly.items()
-            ]).set_index("Mês")
-            st.bar_chart(_m_df, color="#CC0000")
+            # ── Gráfico combinado: barras faturação + linhas margem/proveito ──
+            import plotly.graph_objects as go
 
-            # ── Gráfico de linhas — Margem Bruta + Proveito BoxMovers ─────
             _all_months = sorted(set(_monthly) | set(_monthly_margin) | set(_monthly_proveito))
-            _mg_rows = []
-            for _mk in _all_months:
-                _mg_rows.append({
-                    "Mês":                    _mk,
-                    "Margem Bruta Worten (€)": _monthly_margin.get(_mk, 0.0),
-                    "Proveito BoxMovers (€)":  _monthly_proveito.get(_mk, 0.0),
-                })
-            _mg_df = pd.DataFrame(_mg_rows).set_index("Mês")
-            st.caption("📊 Margem bruta Worten e proveito BoxMovers por mês (escala €)")
-            st.line_chart(_mg_df, color=["#FF8C00", "#00AA44"])
+            _fat_vals  = [_monthly.get(m, 0.0)          for m in _all_months]
+            _mgn_vals  = [_monthly_margin.get(m, 0.0)   for m in _all_months]
+            _prov_vals = [_monthly_proveito.get(m, 0.0) for m in _all_months]
+
+            _fig = go.Figure()
+
+            # Barras — Faturação (eixo esquerdo)
+            _fig.add_trace(go.Bar(
+                x=_all_months, y=_fat_vals,
+                name="Faturação (€)",
+                marker_color="#CC0000",
+                opacity=0.85,
+                yaxis="y1",
+            ))
+
+            # Linha — Margem Bruta Worten (eixo direito)
+            _fig.add_trace(go.Scatter(
+                x=_all_months, y=_mgn_vals,
+                name="Margem Bruta WRT (€)",
+                mode="lines+markers",
+                line=dict(color="#FF8C00", width=2.5),
+                marker=dict(size=6),
+                yaxis="y2",
+            ))
+
+            # Linha — Proveito BoxMovers (eixo direito)
+            _fig.add_trace(go.Scatter(
+                x=_all_months, y=_prov_vals,
+                name="Proveito BoxMovers (€)",
+                mode="lines+markers",
+                line=dict(color="#00AA44", width=2.5, dash="dot"),
+                marker=dict(size=6),
+                yaxis="y2",
+            ))
+
+            _fig.update_layout(
+                height=420,
+                margin=dict(t=30, b=40, l=10, r=10),
+                legend=dict(orientation="h", y=1.08, x=0),
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+                yaxis=dict(
+                    title="Faturação (€)",
+                    titlefont=dict(color="#CC0000"),
+                    tickfont=dict(color="#CC0000"),
+                    tickformat=",.0f",
+                    showgrid=True,
+                    gridcolor="#f0f0f0",
+                ),
+                yaxis2=dict(
+                    title="Margem / Proveito (€)",
+                    titlefont=dict(color="#FF8C00"),
+                    tickfont=dict(color="#FF8C00"),
+                    tickformat=",.0f",
+                    overlaying="y",
+                    side="right",
+                    showgrid=False,
+                ),
+                xaxis=dict(tickangle=-45),
+                hovermode="x unified",
+            )
+            st.plotly_chart(_fig, use_container_width=True)
 
             st.divider()
 
