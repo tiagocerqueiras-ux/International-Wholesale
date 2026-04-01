@@ -504,7 +504,7 @@ def get_executive_dashboard_data(
 
     try:
         q = _get_client().table("deals").select(
-            "deal_id,client,country,status,proposed_value,invoice_value,"
+            "deal_id,client,company,country,status,proposed_value,invoice_value,"
             "margin_pct,salesperson_email,created_at,updated_at,products"
         )
         if salesperson_filter:
@@ -636,9 +636,9 @@ def get_executive_dashboard_data(
     monthly_margin_sorted   = dict(sorted(monthly_margin.items()))
     monthly_proveito_sorted = dict(sorted(monthly_proveito.items()))
 
-    # Margem % por mês (para gráfico)
+    # Margem % por mês (para gráfico) — protegido contra divisão por zero
     monthly_margin_pct_sorted = {
-        m: round(monthly_margin.get(m, 0) / monthly[m] * 100, 2) if monthly.get(m) else 0.0
+        m: round(monthly_margin.get(m, 0) / monthly[m] * 100, 2) if monthly.get(m, 0) > 0 else 0.0
         for m in monthly_sorted
     }
 
@@ -683,8 +683,7 @@ def get_executive_dashboard_data(
         "DREAME":     "Dreame",    "COSORI":     "Cosori",
         "ONEBLADE":   "Philips",   "AIRFRYER":   "Philips",
         "AMAZON":     "Amazon",    "FUJI":       "Fujifilm",
-        "INSTAX":     "Fujifilm",  "GORENJE":    "Gorenje",
-        "ROWENTA":    "Rowenta",   "ELECTROLUX": "Electrolux",
+        "INSTAX":     "Fujifilm",  "ELECTROLUX": "Electrolux",
         "ZANUSSI":    "Zanussi",   "AEG":        "AEG",
         "MIELE":      "Miele",     "GRUNDIG":    "Grundig",
         "HAIER":      "Haier",     "CANDY":      "Candy",

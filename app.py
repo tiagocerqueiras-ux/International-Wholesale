@@ -21,7 +21,7 @@ from config import (
     BP_TARGET_REVENUE, BP_BREAK_EVEN, BP_TARGET_EBITDA,
     BP_TAKE_RATE, BP_OUR_CUT_PCT, BP_FIXED_COSTS,
     BP_SCENARIO_BASE, BP_SCENARIO_OPT,
-    bp_commission_rate, bp_proveito, bp_commission_tier_name,
+    bp_commission_rate, bp_commission_tier_name,
     BP_COMMISSION_TIERS, BP_COMMISSION_BASE_PCT,
 )
 from sku_lookup import lookup_skus, search_by_name, build_cache
@@ -170,11 +170,11 @@ def _render_email_review():
     st.divider()
 
     with st.form(key="email_review_form", clear_on_submit=False):
-        _to  = st.text_input("Para (To)",       value=to_email)
+        _to  = st.text_input("Para (To)",       value=to_email, key="email_review_to")
         _cc  = st.text_input("CC (opcional)",   value="",
-                             help="Separa vários emails com ;")
+                             help="Separa vários emails com ;", key="email_review_cc")
         _bcc = st.text_input("BCC (opcional)",  value="",
-                             help="Separa vários emails com ;")
+                             help="Separa vários emails com ;", key="email_review_bcc")
         st.caption(f"**Assunto:** {subject}")
 
         c1, c2, c3 = st.columns([3, 2, 2])
@@ -541,20 +541,20 @@ if page == "🆕  Nova Cotação":
 
     col_sa, col_sb = st.columns([2,2])
     with col_sa:
-        search_mode = st.radio("Pesquisar por", ["SKU ID","EAN"], horizontal=True)
+        search_mode = st.radio("Pesquisar por", ["SKU ID","EAN"], horizontal=True, key="search_mode_cot")
     with col_sb:
-        margin_mode = st.radio("Margem por", ["Percentagem (%)","Valor (€/un.)"], horizontal=True)
+        margin_mode = st.radio("Margem por", ["Percentagem (%)","Valor (€/un.)"], horizontal=True, key="margin_mode_cot")
 
     col_a, col_b = st.columns([3,1])
     with col_a:
         ph = "Ex: 2062910, 2062944" if search_mode=="SKU ID" else "Ex: 5908099018610, 8806090268380"
         lbl = "SKUs (separados por vírgula) *" if search_mode=="SKU ID" else "EANs (separados por vírgula) *"
-        ids_raw = st.text_input(lbl, placeholder=ph)
+        ids_raw = st.text_input(lbl, placeholder=ph, key="ids_raw_cot")
     with col_b:
         if margin_mode == "Percentagem (%)":
-            margin_val = st.number_input("Margem %", min_value=0.0, max_value=200.0, value=5.0, step=0.5)
+            margin_val = st.number_input("Margem %", min_value=0.0, max_value=200.0, value=5.0, step=0.5, key="margin_val_pct_cot")
         else:
-            margin_val = st.number_input("Margem €/un.", min_value=0.0, max_value=9999.0, value=10.0, step=1.0)
+            margin_val = st.number_input("Margem €/un.", min_value=0.0, max_value=9999.0, value=10.0, step=1.0, key="margin_val_eur_cot")
 
     btn_add, btn_manual, btn_clear = st.columns([2, 2, 4])
     add_clicked    = btn_add.button("➕  Adicionar ao Cesto", type="primary")
