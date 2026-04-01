@@ -54,11 +54,41 @@ st.set_page_config(page_title="Cotação Agent — International Wholesale", pag
 
 st.markdown("""
 <style>
-  [data-testid="stSidebar"] { background: #1F4E79; }
-  [data-testid="stSidebar"] * { color: white !important; }
-  .warn-box { background:#fff3cd; border-left:4px solid #ffc107;
+  /* ── TDC Brand: Navy #1B2744 + Gold #C49A3C ─────────────────────────── */
+  [data-testid="stSidebar"] {
+      background: linear-gradient(180deg, #1B2744 0%, #152038 100%);
+  }
+  [data-testid="stSidebar"] * { color: #e8e4d8 !important; }
+  [data-testid="stSidebar"] .stRadio label:hover { color: #C49A3C !important; }
+
+  /* Botão primário → Navy com borda gold */
+  [data-testid="baseButton-primary"] {
+      background-color: #1B2744 !important;
+      border: 1px solid #C49A3C !important;
+      color: #ffffff !important;
+  }
+  [data-testid="baseButton-primary"]:hover {
+      background-color: #C49A3C !important;
+      color: #1B2744 !important;
+  }
+
+  /* Tabs activas */
+  [data-baseweb="tab"][aria-selected="true"] {
+      border-bottom: 3px solid #C49A3C !important;
+      color: #1B2744 !important;
+  }
+
+  /* Metrics — delta positivo */
+  [data-testid="stMetricDelta"] svg { display:none; }
+
+  .warn-box { background:#fff8e6; border-left:4px solid #C49A3C;
               padding:8px 12px; border-radius:4px; font-size:13px; margin:4px 0; }
   div[data-testid="stForm"] { border: none !important; }
+
+  /* Scrollbar subtil */
+  ::-webkit-scrollbar { width:6px; }
+  ::-webkit-scrollbar-track { background:#f1f1f1; }
+  ::-webkit-scrollbar-thumb { background:#C49A3C; border-radius:3px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -179,11 +209,32 @@ def email_approval_dialog():
 _LOGIN_CSS = """
 <style>
   [data-testid="stSidebar"] { display: none; }
-  .auth-box { max-width: 400px; margin: 80px auto; padding: 40px 36px;
-              border-radius: 10px; box-shadow: 0 4px 24px rgba(0,0,0,.10);
-              background: #fff; text-align: center; }
-  .auth-box h2 { color: #CC0000; font-size: 22px; margin-bottom: 4px; }
-  .auth-box p  { color: #666; font-size: 13px; margin-bottom: 24px; }
+  body, .stApp { background: #F4F2ED !important; }
+  .tdc-login-wrap {
+      max-width: 420px; margin: 60px auto 0 auto;
+      background: #ffffff; border-radius: 16px;
+      box-shadow: 0 8px 40px rgba(27,39,68,.13);
+      padding: 48px 40px 36px 40px; text-align: center;
+  }
+  .tdc-monogram {
+      display: inline-block;
+      background: linear-gradient(135deg, #1B2744 60%, #C49A3C 100%);
+      color: #ffffff; font-size: 28px; font-weight: 800;
+      letter-spacing: 2px; border-radius: 12px;
+      width: 64px; height: 64px; line-height: 64px;
+      margin-bottom: 16px;
+  }
+  .tdc-name {
+      font-size: 18px; font-weight: 700; color: #1B2744;
+      letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 2px;
+  }
+  .tdc-sub {
+      font-size: 11px; letter-spacing: 3px; color: #C49A3C;
+      text-transform: uppercase; margin-bottom: 28px; font-weight: 500;
+  }
+  .tdc-divider {
+      border: none; border-top: 1px solid #e8e4d8; margin: 0 0 24px 0;
+  }
 </style>
 """
 
@@ -193,8 +244,14 @@ def _show_login():
         return True
 
     st.markdown(_LOGIN_CSS, unsafe_allow_html=True)
-    st.markdown('<div class="auth-box"><h2>🔐 International Wholesale</h2>'
-                '<p>BoxMovers B2B Export — Worten</p></div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="tdc-login-wrap">
+      <div class="tdc-monogram">TDC</div>
+      <div class="tdc-name">Transglobal Distribution Chain</div>
+      <div class="tdc-sub">Distribution Chain</div>
+      <hr class="tdc-divider">
+    </div>
+    """, unsafe_allow_html=True)
 
     # ── Primeiro acesso: sem utilizadores criados ─────────────────────────
     try:
@@ -251,9 +308,24 @@ _role = _cu.get("role", "comercial_interno")
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 📦 International Wholesale")
-    st.markdown("**BoxMovers B2B Export**")
-    st.markdown("---")
+    st.markdown("""
+    <div style="text-align:center; padding:16px 8px 12px 8px; margin-bottom:4px;">
+      <div style="display:inline-block; background:linear-gradient(135deg,#1B2744 60%,#C49A3C 100%);
+                  color:#fff; font-size:20px; font-weight:800; letter-spacing:2px;
+                  border-radius:10px; width:48px; height:48px; line-height:48px; text-align:center;">
+        TDC
+      </div>
+      <div style="color:#e8e4d8; font-size:12px; font-weight:700; letter-spacing:2px;
+                  text-transform:uppercase; margin-top:8px;">
+        Transglobal
+      </div>
+      <div style="color:#C49A3C; font-size:9px; letter-spacing:3px;
+                  text-transform:uppercase; margin-top:2px;">
+        Distribution Chain
+      </div>
+    </div>
+    <hr style="border:none; border-top:1px solid rgba(196,154,60,.3); margin:0 0 12px 0;">
+    """, unsafe_allow_html=True)
 
     # Nav filtrado pelo role
     _nav_pages = PAGES_BY_ROLE.get(_role, PAGES_BY_ROLE["comercial_interno"])
@@ -856,33 +928,37 @@ elif page == "📊  Dashboard":
     # ── CSS cards ─────────────────────────────────────────────────────────────
     st.markdown("""
     <style>
+    /* ── TDC Dashboard Theme ───────────────────────────────────────────── */
     .db-card {
         background: #ffffff;
         border-radius: 14px;
         padding: 20px 22px 16px 22px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.06);
-        border: 1px solid #f0f2f5;
+        box-shadow: 0 2px 12px rgba(27,39,68,.07);
+        border: 1px solid #eceae4;
+        border-top: 3px solid #C49A3C;
         margin-bottom: 4px;
     }
-    .db-label  { color: #8a94a6; font-size: 12px; font-weight: 500;
-                 letter-spacing: .4px; text-transform: uppercase; margin-bottom: 6px; }
-    .db-value  { font-size: 30px; font-weight: 700; color: #111827; line-height: 1.1; }
-    .db-delta-g{ color: #10B981; font-size: 12px; margin-top: 6px; font-weight: 500; }
-    .db-delta-r{ color: #E53E3E; font-size: 12px; margin-top: 6px; font-weight: 500; }
-    .db-delta-n{ color: #6b7280; font-size: 12px; margin-top: 6px; font-weight: 500; }
-    .db-sec-title { font-size: 15px; font-weight: 600; color: #111827;
-                    margin: 0 0 14px 0; letter-spacing: -.1px; }
+    .db-label  { color: #8a94a6; font-size: 11px; font-weight: 600;
+                 letter-spacing: .8px; text-transform: uppercase; margin-bottom: 8px; }
+    .db-value  { font-size: 30px; font-weight: 700; color: #1B2744; line-height: 1.1; }
+    .db-delta-g{ color: #059669; font-size: 12px; margin-top: 6px; font-weight: 500; }
+    .db-delta-r{ color: #DC2626; font-size: 12px; margin-top: 6px; font-weight: 500; }
+    .db-delta-n{ color: #9ca3af; font-size: 12px; margin-top: 6px; font-weight: 500; }
+    .db-sec-title { font-size: 13px; font-weight: 700; color: #1B2744;
+                    margin: 0 0 14px 0; letter-spacing: .5px; text-transform: uppercase; }
     .db-bar-row   { margin-bottom: 14px; }
     .db-bar-label { display: flex; justify-content: space-between;
                     font-size: 13px; color: #374151; margin-bottom: 5px; }
-    .db-bar-track { background: #e8f5e9; border-radius: 6px; height: 9px; }
-    .db-bar-fill  { background: #6366F1; border-radius: 6px; height: 9px; }
+    .db-bar-track { background: #f0ece0; border-radius: 6px; height: 8px; }
+    .db-bar-fill  { background: linear-gradient(90deg, #1B2744, #C49A3C);
+                    border-radius: 6px; height: 8px; }
     .db-driver    { background:#ffffff; border-radius:12px; padding:16px 18px;
-                    box-shadow:0 1px 6px rgba(0,0,0,.05); border:1px solid #f0f2f5;
+                    box-shadow:0 1px 8px rgba(27,39,68,.07);
+                    border:1px solid #eceae4; border-bottom: 3px solid #C49A3C;
                     text-align:center; }
-    .db-driver-lbl{ color:#8a94a6; font-size:11px; text-transform:uppercase;
-                    letter-spacing:.4px; margin-bottom:6px; }
-    .db-driver-val{ font-size:20px; font-weight:700; color:#111827; }
+    .db-driver-lbl{ color:#9ca3af; font-size:10px; text-transform:uppercase;
+                    letter-spacing:.8px; margin-bottom:8px; font-weight:600; }
+    .db-driver-val{ font-size:19px; font-weight:700; color:#1B2744; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1055,9 +1131,9 @@ elif page == "📊  Dashboard":
             _fat_vals    = [_monthly.get(m, 0.0)    for m in _all_months]
             _mgpct_vals  = [_monthly_mgpct.get(m, 0.0) for m in _all_months]
 
-            # Paleta: Índigo profundo (barras) + Coral/vermelho (margem %)
-            _C_BAR  = "#6366F1"   # Índigo vibrante — volume/receita
-            _C_LINE = "#EF4444"   # Vermelho coral — margem (alerta visual)
+            # Paleta TDC: Navy (barras) + Gold (margem %)
+            _C_BAR  = "#1B2744"   # TDC Navy — volume/receita
+            _C_LINE = "#C49A3C"   # TDC Gold — margem (leitura rápida)
             _fig_main = go.Figure()
             _fig_main.add_trace(go.Bar(
                 x=_x_labels, y=_fat_vals, name="Faturação",
@@ -1077,15 +1153,15 @@ elif page == "📊  Dashboard":
                 plot_bgcolor="white", paper_bgcolor="white",
                 legend=dict(orientation="h", y=1.12, x=0, font=dict(size=11),
                             bgcolor="rgba(0,0,0,0)"),
-                yaxis=dict(tickformat=",.0f", showgrid=True, gridcolor="#f5f5f7",
-                           tickfont=dict(color="#6366F1", size=10), zeroline=False,
+                yaxis=dict(tickformat=",.0f", showgrid=True, gridcolor="#f4f1ea",
+                           tickfont=dict(color="#1B2744", size=10), zeroline=False,
                            gridwidth=1),
                 yaxis2=dict(tickformat=".1f", ticksuffix="%", overlaying="y", side="right",
                             showgrid=False, zeroline=False,
-                            tickfont=dict(color="#EF4444", size=10)),
+                            tickfont=dict(color="#C49A3C", size=10)),
                 xaxis=dict(showgrid=False, tickfont=dict(size=11), tickangle=0),
                 hovermode="x unified",
-                hoverlabel=dict(bgcolor="white", bordercolor="#e5e7eb", font_size=12),
+                hoverlabel=dict(bgcolor="white", bordercolor="#eceae4", font_size=12),
                 bargap=0.3,
             )
             st.plotly_chart(_fig_main, use_container_width=True)
@@ -1154,23 +1230,23 @@ elif page == "📊  Dashboard":
                 _fig2 = go.Figure()
                 _fig2.add_trace(go.Bar(
                     x=_x2, y=_fat2, name="Faturação",
-                    marker=dict(color="#6366F1", line=dict(width=0)),
-                    opacity=0.90, yaxis="y1",
+                    marker=dict(color="#1B2744", line=dict(width=0)),
+                    opacity=0.88, yaxis="y1",
                 ))
                 _fig2.add_trace(go.Scatter(
                     x=_x2, y=_mgn2, name="Margem Bruta (€)",
                     mode="lines+markers",
-                    line=dict(color="#F59E0B", width=2.5),
+                    line=dict(color="#C49A3C", width=2.5),
                     marker=dict(size=6, color="white",
-                                line=dict(color="#F59E0B", width=2)),
+                                line=dict(color="#C49A3C", width=2)),
                     yaxis="y2",
                 ))
                 _fig2.add_trace(go.Scatter(
                     x=_x2, y=_prov2, name="Proveito BM (€)",
                     mode="lines+markers",
-                    line=dict(color="#10B981", width=2.5, dash="dot"),
+                    line=dict(color="#059669", width=2.5, dash="dot"),
                     marker=dict(size=7, symbol="diamond", color="white",
-                                line=dict(color="#10B981", width=2)),
+                                line=dict(color="#059669", width=2)),
                     yaxis="y2",
                 ))
                 _fig2.update_layout(
