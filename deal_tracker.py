@@ -707,6 +707,38 @@ def get_executive_dashboard_data(
     top_brand  = max(_brand_rev, key=_brand_rev.get) if _brand_rev else "—"
     mix_abrand = round(_abrand_total / total_revenue * 100, 0) if total_revenue else 0.0
 
+    # ── Enriquecimento com dados reais do BoxMovers Excel ─────────────────────
+    # Quando disponível localmente, os dados reais (clientes, marcas, receita,
+    # margens) sobrepõem os valores estimados do Supabase.
+    # Em Railway (sem acesso aos ficheiros), este bloco falha silenciosamente.
+    _bm_year = year or datetime.now().year
+    try:
+        from boxmovers_reader import get_bm_dashboard_data
+        _bm = get_bm_dashboard_data(year=_bm_year)
+        if _bm:
+            # KPIs reais
+            total_revenue      = _bm["total_revenue"]
+            gross_margin_value = _bm["gross_margin_value"]
+            avg_margin         = _bm["avg_margin"]
+            our_cut            = _bm["our_cut"]
+            # Drivers reais
+            top_client         = _bm["top_client"]
+            top_client_rev     = _bm["top_client_rev"]
+            top_brand          = _bm["top_brand"]
+            mix_abrand         = _bm["mix_abrand"]
+            avg_ticket         = _bm["avg_ticket"]
+            # Gráfico mensal real
+            monthly_sorted          = _bm["monthly_revenue"]
+            monthly_margin_sorted   = _bm["monthly_margin"]
+            monthly_margin_pct_sorted = _bm["monthly_margin_pct"]
+            monthly_proveito_sorted = _bm["monthly_proveito"]
+            # Comissão recalculada sobre receita real
+            commission_rate_pct     = _bm["commission_rate_pct"] / 100
+            tier_name               = _bm["tier_name"]
+            our_cut_commission      = _bm["our_cut"]
+    except Exception as _bm_err:
+        print(f"[deal_tracker] BoxMovers enrichment indisponível: {_bm_err}")
+
     return {
         "total_revenue":          total_revenue,
         "total_pipeline":         total_pipeline,
