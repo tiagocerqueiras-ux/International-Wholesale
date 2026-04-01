@@ -145,9 +145,9 @@ def _clear_state():
               "sup_basket","sup_so_manual","sup_pvp_alvo"]:
         st.session_state.pop(k, None)
 
-# ── Dialog aprovação email ────────────────────────────────────────────────────
-@st.dialog("📧 Revisão do Email — Aprovação Necessária", width="large")
-def email_approval_dialog():
+# ── Revisão de email — inline (sem @st.dialog para máxima compatibilidade) ────
+def _render_email_review():
+    """Renderiza inline a revisão do email quando pending_email está em session_state."""
     pending   = st.session_state.get("pending_email", {})
     html_body = pending.get("html_body", "")
     did       = pending.get("deal_id", "")
@@ -156,52 +156,63 @@ def email_approval_dialog():
     client    = pending.get("client_name", "")
     _company  = pending.get("company", "")
 
-    st.markdown("Revê o email antes de enviar.")
-    st.divider()
-    st.components.v1.html(html_body, height=520, scrolling=True)
-    st.divider()
-
     subject = build_subject(did, client, language, company=_company)
 
-    _dlg_to  = st.text_input("Para (To)", value=to_email, key="dlg_to")
-    _dlg_cc  = st.text_input("CC (opcional)", value="", key="dlg_cc",
-                              help="Separa vários emails com ;")
-    _dlg_bcc = st.text_input("BCC (opcional)", value="", key="dlg_bcc",
-                              help="Separa vários emails com ;")
-    st.caption(f"**Assunto:** {subject}")
+    st.markdown("""
+    <div style="background:#fff8e6;border-left:4px solid #C49A3C;
+                padding:10px 16px;border-radius:6px;margin-bottom:12px;">
+      <b>📧 Revisão do Email — Aprovação Necessária</b><br>
+      <span style="font-size:13px;color:#555;">Revê o conteúdo e clica em Enviar.</span>
+    </div>
+    """, unsafe_allow_html=True)
 
-    c1, c2, c3 = st.columns([3, 2, 2])
+    st.components.v1.html(html_body, height=500, scrolling=True)
+    st.divider()
 
-    with c1:
-        if st.button("🚀  Enviar Email", type="primary", use_container_width=True):
-            _cc_list  = [e.strip() for e in _dlg_cc.split(";")  if e.strip()] or None
-            _bcc_list = [e.strip() for e in _dlg_bcc.split(";") if e.strip()] or None
+    with st.form(key="email_review_form", clear_on_submit=False):
+        _to  = st.text_input("Para (To)",       value=to_email)
+        _cc  = st.text_input("CC (opcional)",   value="",
+                             help="Separa vários emails com ;")
+        _bcc = st.text_input("BCC (opcional)",  value="",
+                             help="Separa vários emails com ;")
+        st.caption(f"**Assunto:** {subject}")
+
+        c1, c2, c3 = st.columns([3, 2, 2])
+        _send    = c1.form_submit_button("🚀  Enviar Email",  type="primary",
+                                          use_container_width=True)
+        _regen   = c2.form_submit_button("🔄  Regenerar",     use_container_width=True)
+        _cancel  = c3.form_submit_button("❌  Cancelar",      use_container_width=True)
+
+    if _send:
+        _cc_list  = [e.strip() for e in _cc.split(";")  if e.strip()] or None
+        _bcc_list = [e.strip() for e in _bcc.split(";") if e.strip()] or None
+        with st.spinner("A enviar..."):
             ok, err = create_draft(
-                to=_dlg_to, subject=subject, html_body=html_body,
+                to=_to, subject=subject, html_body=html_body,
                 send=True, cc=_cc_list, bcc=_bcc_list,
             )
-            if ok:
-                save_email_html(did, html_body, "proposal")
-                update_margin(did, pending.get("margin_calc", 0), pending.get("pvp_total", 0))
-                update_status(did, "Enviado", "Email enviado via SMTP")
-                st.session_state["email_result"] = {"success": True, "deal_id": did,
-                                                     "msg": "Email enviado com sucesso!"}
-                st.session_state.pop("pending_email", None)
-                _clear_state()
-                st.rerun()
-            else:
-                st.error(f"Erro ao enviar: {err}")
-
-    with c2:
-        if st.button("🔄  Regenerar", use_container_width=True):
+        if ok:
+            save_email_html(did, html_body, "proposal")
+            update_margin(did, pending.get("margin_calc", 0), pending.get("pvp_total", 0))
+            update_status(did, "Enviado", "Email enviado")
+            st.session_state["email_result"] = {"success": True, "deal_id": did,
+                                                 "msg": "Email enviado com sucesso!"}
             st.session_state.pop("pending_email", None)
+            _clear_state()
             st.rerun()
+        else:
+            st.error(f"❌ Erro ao enviar: {err}")
 
-    with c3:
-        if st.button("❌  Cancelar", use_container_width=True):
-            if did: update_status(did, "Rascunho", "Cancelado na revisão")
-            st.session_state.pop("pending_email", None)
-            st.rerun()
+    if _regen:
+        st.session_state.pop("pending_email", None)
+        st.rerun()
+
+    if _cancel:
+        if did: update_status(did, "Rascunho", "Cancelado na revisão")
+        st.session_state.pop("pending_email", None)
+        st.rerun()
+
+    st.stop()   # não renderiza mais nada abaixo enquanto revisão estiver ativa
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SEGURANÇA — Login multi-utilizador
@@ -356,7 +367,7 @@ if "email_result" in st.session_state and page == "🆕  Nova Cotação":
         st.success(f"✅ Deal **{r['deal_id']}** — {msg}")
 
 if "pending_email" in st.session_state:
-    email_approval_dialog()
+    _render_email_review()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
