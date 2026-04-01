@@ -3,6 +3,7 @@ Cotação Agent — Interface Web (Streamlit)
 BoxMovers Export | Worten
 """
 
+import re
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -135,7 +136,7 @@ def calc_pvp(base_fc, margin_mode, margin_val):
     return round(base_fc + margin_val, 4)
 
 def margin_pct(cost, pvp):
-    if not cost or not pvp or pvp == 0: return 0.0
+    if cost is None or pvp is None or pvp == 0: return 0.0
     return round((pvp - cost) / pvp * 100, 2)
 
 def _clear_state():
@@ -561,7 +562,6 @@ if page == "🆕  Nova Cotação":
     manual_clicked = btn_manual.button("✏️  Produto Manual")
 
     if add_clicked and ids_raw.strip():
-        import re
         id_list = [s.strip() for s in re.split(r'[,\s]+', ids_raw.strip()) if s.strip()]
         with st.spinner(f"A consultar {len(id_list)} produto(s)..."):
             index = load_index()

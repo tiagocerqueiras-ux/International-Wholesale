@@ -395,10 +395,10 @@ def delete_deal(deal_id: str) -> bool:
 def list_deals(status_filter: str = None, salesperson_filter: str = None) -> list:
     try:
         q = _get_client().table("deals").select(
-            "deal_id,created_at,client,country,client_email,language,"
+            "deal_id,created_at,client,company,country,client_email,language,"
             "sku_ids,products,avg_unit_cost,eis_da_total,has_sell_in,has_sell_out,"
             "qty_total,proposed_value,margin_pct,incoterm,payment_conditions,"
-            "vat,freight,availability,status,updated_at,notes,salesperson_email"
+            "vat,freight,availability,status,updated_at,notes,salesperson_email,skus_detail"
         ).order("created_at", desc=False)
         if status_filter:
             q = q.eq("status", status_filter)
