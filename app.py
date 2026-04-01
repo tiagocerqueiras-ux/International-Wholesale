@@ -867,7 +867,7 @@ elif page == "📊  Dashboard":
     .db-label  { color: #8a94a6; font-size: 12px; font-weight: 500;
                  letter-spacing: .4px; text-transform: uppercase; margin-bottom: 6px; }
     .db-value  { font-size: 30px; font-weight: 700; color: #111827; line-height: 1.1; }
-    .db-delta-g{ color: #00B37D; font-size: 12px; margin-top: 6px; font-weight: 500; }
+    .db-delta-g{ color: #10B981; font-size: 12px; margin-top: 6px; font-weight: 500; }
     .db-delta-r{ color: #E53E3E; font-size: 12px; margin-top: 6px; font-weight: 500; }
     .db-delta-n{ color: #6b7280; font-size: 12px; margin-top: 6px; font-weight: 500; }
     .db-sec-title { font-size: 15px; font-weight: 600; color: #111827;
@@ -876,7 +876,7 @@ elif page == "📊  Dashboard":
     .db-bar-label { display: flex; justify-content: space-between;
                     font-size: 13px; color: #374151; margin-bottom: 5px; }
     .db-bar-track { background: #e8f5e9; border-radius: 6px; height: 9px; }
-    .db-bar-fill  { background: #00B37D; border-radius: 6px; height: 9px; }
+    .db-bar-fill  { background: #6366F1; border-radius: 6px; height: 9px; }
     .db-driver    { background:#ffffff; border-radius:12px; padding:16px 18px;
                     box-shadow:0 1px 6px rgba(0,0,0,.05); border:1px solid #f0f2f5;
                     text-align:center; }
@@ -1055,17 +1055,21 @@ elif page == "📊  Dashboard":
             _fat_vals    = [_monthly.get(m, 0.0)    for m in _all_months]
             _mgpct_vals  = [_monthly_mgpct.get(m, 0.0) for m in _all_months]
 
+            # Paleta: Índigo profundo (barras) + Coral/vermelho (margem %)
+            _C_BAR  = "#6366F1"   # Índigo vibrante — volume/receita
+            _C_LINE = "#EF4444"   # Vermelho coral — margem (alerta visual)
             _fig_main = go.Figure()
             _fig_main.add_trace(go.Bar(
-                x=_x_labels, y=_fat_vals, name="Faturação (€)",
-                marker_color="#4A90D9", marker_line_width=0,
-                opacity=0.88, yaxis="y1",
+                x=_x_labels, y=_fat_vals, name="Faturação",
+                marker=dict(color=_C_BAR, line=dict(width=0)),
+                opacity=0.90, yaxis="y1",
             ))
             _fig_main.add_trace(go.Scatter(
                 x=_x_labels, y=_mgpct_vals, name="Margem %",
                 mode="lines+markers",
-                line=dict(color="#F5A623", width=2.5),
-                marker=dict(size=6, color="#F5A623"),
+                line=dict(color=_C_LINE, width=2.5),
+                marker=dict(size=7, color="white",
+                            line=dict(color=_C_LINE, width=2)),
                 yaxis="y2",
             ))
             _fig_main.update_layout(
@@ -1073,14 +1077,16 @@ elif page == "📊  Dashboard":
                 plot_bgcolor="white", paper_bgcolor="white",
                 legend=dict(orientation="h", y=1.12, x=0, font=dict(size=11),
                             bgcolor="rgba(0,0,0,0)"),
-                yaxis=dict(tickformat=",.0f", showgrid=True, gridcolor="#f0f2f5",
-                           tickfont=dict(color="#4A90D9", size=10), zeroline=False),
+                yaxis=dict(tickformat=",.0f", showgrid=True, gridcolor="#f5f5f7",
+                           tickfont=dict(color="#6366F1", size=10), zeroline=False,
+                           gridwidth=1),
                 yaxis2=dict(tickformat=".1f", ticksuffix="%", overlaying="y", side="right",
                             showgrid=False, zeroline=False,
-                            tickfont=dict(color="#C47D00", size=10)),
-                xaxis=dict(showgrid=False, tickfont=dict(size=11)),
+                            tickfont=dict(color="#EF4444", size=10)),
+                xaxis=dict(showgrid=False, tickfont=dict(size=11), tickangle=0),
                 hovermode="x unified",
-                hoverlabel=dict(bgcolor="white", bordercolor="#ddd", font_size=11),
+                hoverlabel=dict(bgcolor="white", bordercolor="#e5e7eb", font_size=12),
+                bargap=0.3,
             )
             st.plotly_chart(_fig_main, use_container_width=True)
         else:
@@ -1148,29 +1154,37 @@ elif page == "📊  Dashboard":
                 _fig2 = go.Figure()
                 _fig2.add_trace(go.Bar(
                     x=_x2, y=_fat2, name="Faturação",
-                    marker_color="#4A90D9", opacity=0.85, yaxis="y1",
+                    marker=dict(color="#6366F1", line=dict(width=0)),
+                    opacity=0.90, yaxis="y1",
                 ))
                 _fig2.add_trace(go.Scatter(
                     x=_x2, y=_mgn2, name="Margem Bruta (€)",
-                    mode="lines+markers", line=dict(color="#F5A623", width=2.5),
-                    marker=dict(size=6, color="#F5A623"), yaxis="y2",
+                    mode="lines+markers",
+                    line=dict(color="#F59E0B", width=2.5),
+                    marker=dict(size=6, color="white",
+                                line=dict(color="#F59E0B", width=2)),
+                    yaxis="y2",
                 ))
                 _fig2.add_trace(go.Scatter(
                     x=_x2, y=_prov2, name="Proveito BM (€)",
-                    mode="lines+markers", line=dict(color="#27AE60", width=2.5, dash="dash"),
-                    marker=dict(size=6, symbol="diamond", color="#27AE60"), yaxis="y2",
+                    mode="lines+markers",
+                    line=dict(color="#10B981", width=2.5, dash="dot"),
+                    marker=dict(size=7, symbol="diamond", color="white",
+                                line=dict(color="#10B981", width=2)),
+                    yaxis="y2",
                 ))
                 _fig2.update_layout(
                     height=320, margin=dict(t=30, b=30, l=0, r=0),
                     plot_bgcolor="white", paper_bgcolor="white",
                     legend=dict(orientation="h", y=1.15, x=0, font=dict(size=11),
                                 bgcolor="rgba(0,0,0,0)"),
-                    yaxis=dict(tickformat=",.0f", showgrid=True, gridcolor="#f0f2f5",
-                               tickfont=dict(size=10), zeroline=False),
+                    yaxis=dict(tickformat=",.0f", showgrid=True, gridcolor="#f5f5f7",
+                               gridwidth=1, tickfont=dict(size=10), zeroline=False),
                     yaxis2=dict(tickformat=",.0f", overlaying="y", side="right",
                                 showgrid=False, zeroline=False, tickfont=dict(size=10)),
                     xaxis=dict(showgrid=False, tickfont=dict(size=11)),
                     hovermode="x unified",
+                    bargap=0.3,
                 )
                 st.plotly_chart(_fig2, use_container_width=True)
 

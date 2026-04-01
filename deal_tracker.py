@@ -505,7 +505,7 @@ def get_executive_dashboard_data(
     try:
         q = _get_client().table("deals").select(
             "deal_id,client,country,status,proposed_value,invoice_value,"
-            "margin_pct,salesperson_email,created_at,updated_at"
+            "margin_pct,salesperson_email,created_at,updated_at,products"
         )
         if salesperson_filter:
             q = q.ilike("salesperson_email", salesperson_filter)
@@ -661,25 +661,51 @@ def get_executive_dashboard_data(
     avg_ticket = round(total_revenue / len(revenue_rows), 0) if revenue_rows else 0.0
 
     # Top marca e mix A-Brand (parse dos products text)
-    _ABRANDS = {
-        "PHILIPS","SAMSUNG","SONY","BRAUN","LG","ASUS","LENOVO","HP","CANON","NIKON",
-        "APPLE","BOSE","SMEG","BABYLISS","DYSON","ROWENTA","TEFAL","MOULINEX",
-        "BOSCH","SIEMENS","WHIRLPOOL","KRUPS","DELONGHI","DE'LONGHI","FUJIFILM",
-        "GORENJE","HISENSE","TOSHIBA","PANASONIC","SHARP","TCL","XIAOMI","OPPO",
+    # Mapeamento: palavra-chave no produto → nome da marca canónico
+    _BRAND_MAP = {
+        "SAMSUNG":    "Samsung",   "PHILIPS":    "Philips",
+        "SONY":       "Sony",      "LG":         "LG",
+        "BRAUN":      "Braun",     "BABYLISS":   "BaByliss",
+        "BOSCH":      "Bosch",     "SIEMENS":    "Siemens",
+        "TEFAL":      "Tefal",     "MOULINEX":   "Moulinex",
+        "ROWENTA":    "Rowenta",   "KRUPS":      "Krups",
+        "DELONGHI":   "De'Longhi", "DYSON":      "Dyson",
+        "SMEG":       "Smeg",      "BOSE":       "Bose",
+        "CANON":      "Canon",     "NIKON":      "Nikon",
+        "FUJIFILM":   "Fujifilm",  "PANASONIC":  "Panasonic",
+        "TOSHIBA":    "Toshiba",   "HISENSE":    "Hisense",
+        "TCL":        "TCL",       "XIAOMI":     "Xiaomi",
+        "OPPO":       "Oppo",      "APPLE":      "Apple",
+        "ASUS":       "Asus",      "LENOVO":     "Lenovo",
+        "HP":         "HP",        "GORENJE":    "Gorenje",
+        "WHIRLPOOL":  "Whirlpool", "SHARP":      "Sharp",
+        "NINTENDO":   "Nintendo",  "REMINGTON":  "Remington",
+        "DREAME":     "Dreame",    "COSORI":     "Cosori",
+        "ONEBLADE":   "Philips",   "AIRFRYER":   "Philips",
+        "AMAZON":     "Amazon",    "FUJI":       "Fujifilm",
+        "INSTAX":     "Fujifilm",  "GORENJE":    "Gorenje",
+        "ROWENTA":    "Rowenta",   "ELECTROLUX": "Electrolux",
+        "ZANUSSI":    "Zanussi",   "AEG":        "AEG",
+        "MIELE":      "Miele",     "GRUNDIG":    "Grundig",
+        "HAIER":      "Haier",     "CANDY":      "Candy",
+        "HOOVER":     "Hoover",    "INDESIT":    "Indesit",
+        "HOTPOINT":   "Hotpoint",  "BEKO":       "Beko",
+        "ARISTON":    "Ariston",   "WHIRPOOL":   "Whirlpool",
     }
     _brand_rev: dict = {}
     _abrand_total = 0.0
     for r in revenue_rows:
         _prod_upper = (r.get("products") or "").upper()
         _v = _val(r)
-        _matched = False
-        for _b in _ABRANDS:
-            if _b in _prod_upper:
-                _brand_rev[_b] = _brand_rev.get(_b, 0) + _v
-                _matched = True
-        if _matched:
+        _matched_brands = set()
+        for _kw, _brand_name in _BRAND_MAP.items():
+            if _kw in _prod_upper:
+                _matched_brands.add(_brand_name)
+        for _bn in _matched_brands:
+            _brand_rev[_bn] = _brand_rev.get(_bn, 0) + _v
+        if _matched_brands:
             _abrand_total += _v
-    top_brand  = max(_brand_rev, key=_brand_rev.get).title() if _brand_rev else "—"
+    top_brand  = max(_brand_rev, key=_brand_rev.get) if _brand_rev else "—"
     mix_abrand = round(_abrand_total / total_revenue * 100, 0) if total_revenue else 0.0
 
     return {
