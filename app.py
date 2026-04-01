@@ -1126,59 +1126,79 @@ elif page == "📊  Dashboard":
             _fig = go.Figure()
 
             # Barras — Faturação (eixo esquerdo)
+            # Azul steel: volume/receita — leitura imediata como "escala grande"
             _fig.add_trace(go.Bar(
                 x=_all_months, y=_fat_vals,
                 name="Faturação (€)",
-                marker_color="#CC0000",
-                opacity=0.85,
+                marker_color="#4A90D9",
+                marker_line_color="#2C5F8A",
+                marker_line_width=0.5,
+                opacity=0.90,
                 yaxis="y1",
             ))
 
             # Linha — Margem Bruta Worten (eixo direito)
+            # Âmbar/laranja: alerta/atenção — margem é o que importa monitorizar
             _fig.add_trace(go.Scatter(
                 x=_all_months, y=_mgn_vals,
                 name="Margem Bruta WRT (€)",
                 mode="lines+markers",
-                line=dict(color="#FF8C00", width=2.5),
-                marker=dict(size=6),
+                line=dict(color="#F5A623", width=3),
+                marker=dict(size=7, symbol="circle", color="#F5A623",
+                            line=dict(color="#C47D00", width=1.5)),
                 yaxis="y2",
             ))
 
             # Linha — Proveito BoxMovers (eixo direito)
+            # Verde esmeralda: lucro/positivo — leitura instantânea como "resultado"
             _fig.add_trace(go.Scatter(
                 x=_all_months, y=_prov_vals,
                 name="Proveito BoxMovers (€)",
                 mode="lines+markers",
-                line=dict(color="#00AA44", width=2.5, dash="dot"),
-                marker=dict(size=6),
+                line=dict(color="#27AE60", width=3, dash="dash"),
+                marker=dict(size=7, symbol="diamond", color="#27AE60",
+                            line=dict(color="#1A7A42", width=1.5)),
                 yaxis="y2",
             ))
 
             _fig.update_layout(
-                height=420,
-                margin=dict(t=30, b=40, l=10, r=10),
-                legend=dict(orientation="h", y=1.08, x=0),
-                plot_bgcolor="white",
+                height=440,
+                margin=dict(t=40, b=50, l=10, r=10),
+                legend=dict(
+                    orientation="h", y=1.10, x=0,
+                    bgcolor="rgba(255,255,255,0.8)",
+                    bordercolor="#e0e0e0", borderwidth=1,
+                    font=dict(size=12),
+                ),
+                plot_bgcolor="#FAFAFA",
                 paper_bgcolor="white",
                 yaxis=dict(
                     title="Faturação (€)",
-                    titlefont=dict(color="#CC0000"),
-                    tickfont=dict(color="#CC0000"),
+                    titlefont=dict(color="#2C5F8A", size=12),
+                    tickfont=dict(color="#2C5F8A", size=11),
                     tickformat=",.0f",
                     showgrid=True,
-                    gridcolor="#f0f0f0",
+                    gridcolor="#E8EEF4",
+                    gridwidth=1,
+                    zeroline=False,
                 ),
                 yaxis2=dict(
                     title="Margem / Proveito (€)",
-                    titlefont=dict(color="#FF8C00"),
-                    tickfont=dict(color="#FF8C00"),
+                    titlefont=dict(color="#C47D00", size=12),
+                    tickfont=dict(color="#C47D00", size=11),
                     tickformat=",.0f",
                     overlaying="y",
                     side="right",
                     showgrid=False,
+                    zeroline=False,
                 ),
-                xaxis=dict(tickangle=-45),
+                xaxis=dict(
+                    tickangle=-45,
+                    tickfont=dict(size=11),
+                    showgrid=False,
+                ),
                 hovermode="x unified",
+                hoverlabel=dict(bgcolor="white", bordercolor="#ccc", font_size=12),
             )
             st.plotly_chart(_fig, use_container_width=True)
 
