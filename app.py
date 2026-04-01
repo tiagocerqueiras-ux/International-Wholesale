@@ -21,6 +21,8 @@ from config import (
     BP_TARGET_REVENUE, BP_BREAK_EVEN, BP_TARGET_EBITDA,
     BP_TAKE_RATE, BP_OUR_CUT_PCT, BP_FIXED_COSTS,
     BP_SCENARIO_BASE, BP_SCENARIO_OPT,
+    bp_commission_rate, bp_proveito, bp_commission_tier_name,
+    BP_COMMISSION_TIERS, BP_COMMISSION_BASE_PCT, BP_MGN_WRT_ESTIM,
 )
 from sku_lookup import lookup_skus, search_by_name, build_cache
 from deal_tracker import add_deal, update_status, update_margin, update_deal_prices, duplicate_deal, delete_deal, list_deals, get_deal, deal_products_table, get_sku_price_history, update_deal_operational, get_pipeline_stats, get_executive_dashboard_data
@@ -882,14 +884,18 @@ elif page == "📊  Dashboard":
         st.info("Sem dados disponíveis.")
         st.stop()
 
-    _rev        = _dash.get("total_revenue", 0)
-    _pipe       = _dash.get("total_pipeline", 0)
-    _margin     = _dash.get("avg_margin", 0)
-    _gm_val     = _dash.get("gross_margin_value", 0)
-    _our_cut    = _dash.get("our_cut", 0)
-    _ebitda_est = _our_cut - BP_FIXED_COSTS
-    _win_rate   = _dash.get("win_rate", 0)
-    _take_rate  = round(_our_cut / _rev * 100, 2) if _rev > 0 else 0.0
+    _rev              = _dash.get("total_revenue", 0)
+    _pipe             = _dash.get("total_pipeline", 0)
+    _margin           = _dash.get("avg_margin", 0)
+    _gm_val           = _dash.get("gross_margin_value", 0)
+    _our_cut          = _dash.get("our_cut_commission", _dash.get("our_cut", 0))  # usa estrutura comissões real
+    _ebitda_est       = _our_cut - BP_FIXED_COSTS
+    _win_rate         = _dash.get("win_rate", 0)
+    _take_rate        = round(_our_cut / _rev * 100, 2) if _rev > 0 else 0.0
+    _commission_rate  = _dash.get("commission_rate_pct", 0)   # e.g. 20.0%
+    _tier_name        = _dash.get("tier_name", "—")
+    _next_threshold   = _dash.get("next_tier_threshold")
+    _mgn_wrt_val      = round(_rev * 0.03, 2)                 # T/O × 3% margem WRT
 
     # ── Tabs ──────────────────────────────────────────────────────────────
     _d_tab1, _d_tab2, _d_tab3 = st.tabs([
@@ -940,25 +946,50 @@ elif page == "📊  Dashboard":
         _pl1, _pl2 = st.columns([2, 1])
         with _pl1:
             _pl_rows = [
-                {"Item": "📦 Faturação Total",       "Valor (€)": f"{_rev:>15,.2f}",    "Notas": f"Cenário alvo: {BP_TARGET_REVENUE/1e6:.0f}M €"},
-                {"Item": "📉 Margem Bruta Estimada", "Valor (€)": f"{_gm_val:>15,.2f}", "Notas": f"{_margin:.1f}% médio"},
-                {"Item": "🎯 Proveito BoxMovers (30%)", "Valor (€)": f"{_our_cut:>15,.2f}", "Notas": f"Take-rate: {_take_rate:.2f}% (alvo {BP_TAKE_RATE*100:.2f}%)"},
-                {"Item": "➖ Custos Fixos Anuais",   "Valor (€)": f"-{BP_FIXED_COSTS:>14,.2f}", "Notas": "2 colabs + 2 contractors"},
-                {"Item": "═══════════════════",       "Valor (€)": "═══════════════", "Notas": ""},
-                {"Item": "📊 EBITDA Estimado",        "Valor (€)": f"{_ebitda_est:>15,.2f}", "Notas": f"Alvo: {BP_TARGET_EBITDA/1e3:.0f}k €"},
+                {"Item": "📦 Faturação Total",          "Valor (€)": f"{_rev:>15,.2f}",       "Notas": f"Cenário alvo: {BP_TARGET_REVENUE/1e6:.0f}M €"},
+                {"Item": "📉 Margem Bruta WRT (3%)",    "Valor (€)": f"{_mgn_wrt_val:>15,.2f}","Notas": "T/O × 3% margem Worten estimada"},
+                {"Item": f"🎯 Proveito BM ({_commission_rate:.1f}% comissão)", "Valor (€)": f"{_our_cut:>15,.2f}", "Notas": f"Escalão: {_tier_name}  ·  Take-rate: {_take_rate:.2f}%"},
+                {"Item": "➖ Custos Fixos Anuais",       "Valor (€)": f"-{BP_FIXED_COSTS:>14,.2f}", "Notas": "2 colabs + 2 contractors"},
+                {"Item": "═══════════════════",          "Valor (€)": "═══════════════",       "Notas": ""},
+                {"Item": "📊 EBITDA Estimado",           "Valor (€)": f"{_ebitda_est:>15,.2f}", "Notas": f"Alvo: {BP_TARGET_EBITDA/1e3:.0f}k €"},
             ]
             st.dataframe(pd.DataFrame(_pl_rows), use_container_width=True, hide_index=True)
 
         with _pl2:
-            st.metric("Take-rate real", f"{_take_rate:.2f}%",
-                      delta=f"Alvo: {BP_TAKE_RATE*100:.2f}%",
-                      delta_color="normal" if _take_rate >= BP_TAKE_RATE*100 else "inverse")
+            st.metric("🏆 Escalão Comissão", f"{_commission_rate:.1f}%",
+                      delta=_tier_name)
             st.metric("EBITDA estimado", f"{_ebitda_est:,.0f} €",
                       delta=f"Gap vs. alvo: {_ebitda_est - BP_TARGET_EBITDA:+,.0f} €",
                       delta_color="normal" if _ebitda_est >= BP_TARGET_EBITDA else "inverse")
             st.metric("Break-even", "✅ Atingido" if _rev >= BP_BREAK_EVEN else "❌ Não atingido",
                       delta=f"{(_rev - BP_BREAK_EVEN):+,.0f} €",
                       delta_color="normal" if _rev >= BP_BREAK_EVEN else "inverse")
+
+        # ── Escalões de comissão — progresso ─────────────────────────────
+        st.divider()
+        st.subheader("🚀 Aceleradores de Comissão")
+        from config import BP_COMMISSION_TIERS, BP_COMMISSION_BASE_PCT, BP_MGN_WRT_ESTIM as _mgn_wrt
+        _tier_cols = st.columns(4)
+        _tier_labels = ["Base  (<10M)", "Escalão 1  (10–15M)", "Escalão 2  (15–20M)", "Escalão 3  (>20M)"]
+        _tier_rates  = [17.5, 20.0, 22.5, 25.0]
+        _tier_prov   = [850_000 * _mgn_wrt * r/100 * 12 for r in [17.5, 20.0, 22.5, 25.0]]  # anualizado cap
+        _tier_caps   = [52_500, 90_000, 135_000, 187_500]
+        for _i, (_tc, _tl, _tr, _tcap) in enumerate(zip(_tier_cols, _tier_labels, _tier_rates, _tier_caps)):
+            _active = (
+                (_i == 0 and _rev < 10_000_000) or
+                (_i == 1 and 10_000_000 <= _rev < 15_000_000) or
+                (_i == 2 and 15_000_000 <= _rev < 20_000_000) or
+                (_i == 3 and _rev >= 20_000_000)
+            )
+            _badge = "🟢 **ACTIVO**" if _active else ""
+            _tc.markdown(f"**{_tl}**  {_badge}")
+            _tc.metric("Comissão", f"{_tr:.1f}%")
+            _tc.metric("Proveito máx/ano", f"{_tcap:,.0f} €")
+
+        if _next_threshold:
+            _gap = _next_threshold - _rev
+            st.info(f"💡 Faltam **{_gap:,.0f} €** de faturação para activar o próximo acelerador  "
+                    f"(+{_gap/1e6:.2f}M → {_next_threshold/1e6:.0f}M T/O)", icon="⚡")
 
         st.divider()
         st.subheader("📋 Distribuição por Status")

@@ -230,7 +230,49 @@ BP_TARGET_REVENUE   = 15_000_000   # EUR/ano — faturação alvo
 BP_BREAK_EVEN       = 11_500_000   # EUR/ano — ponto de equilíbrio
 BP_TARGET_EBITDA    =    100_000   # EUR/ano — EBITDA alvo
 BP_TAKE_RATE        =      0.0265  # 2,65% sobre faturação = nossa parte
-BP_OUR_CUT_PCT      =       0.30   # 30% da margem bruta = proveito BoxMovers
+BP_OUR_CUT_PCT      =       0.30   # 30% da margem bruta = proveito BoxMovers (legado)
 BP_FIXED_COSTS      =    306_000   # EUR/ano — pessoal fixo (2 colabs + 2 contractors)
 BP_SCENARIO_BASE    = 20_000_000   # EUR — cenário base
 BP_SCENARIO_OPT     = 30_000_000   # EUR — cenário otimista
+
+# ── Estrutura de Comissões e Aceleradores (Simulador Exportação Worten) ────────
+# Fórmula: Proveito = T/O × BP_MGN_WRT_ESTIM × taxa_comissão(T/O anual)
+BP_MGN_WRT_ESTIM       = 0.030   # 3,0% — margem bruta Worten estimada sobre T/O
+BP_COMMISSION_BASE_PCT = 0.175   # 17,5% — comissão base sobre a margem Worten
+
+# Aceleradores extra sobre T/O TOTAL anual atingido
+# Cada entrada: (to_min_eur, to_max_eur_excl, pct_extra_comissao)
+BP_COMMISSION_TIERS = [
+    # (mínimo T/O, máximo T/O excl., % comissão extra)
+    (             0,  9_999_999, 0.000),   # Base: 17,5%
+    (10_000_000, 14_999_999, 0.025),       # +2,5% → 20,0%
+    (15_000_000, 19_999_999, 0.050),       # +5,0% → 22,5%
+    (20_000_000, float("inf"), 0.075),     # +7,5% → 25,0%
+]
+
+# Comissão anual máxima por escalão (referência do BP)
+BP_COMMISSION_TIER_CAPS = {
+    "base":   52_500,   # < 10M T/O
+    "tier1":  90_000,   # 10M–15M T/O
+    "tier2": 135_000,   # 15M–20M T/O
+    "tier3": 187_500,   # > 20M T/O
+}
+
+def bp_commission_rate(annual_turnover: float) -> float:
+    """Devolve a taxa total de comissão (base + acelerador) para o T/O anual dado."""
+    extra = 0.0
+    for to_min, to_max, pct_extra in BP_COMMISSION_TIERS:
+        if annual_turnover >= to_min:
+            extra = pct_extra
+    return BP_COMMISSION_BASE_PCT + extra
+
+def bp_proveito(annual_turnover: float) -> float:
+    """Calcula o proveito BoxMovers total: T/O × 3% margem WRT × taxa_comissão."""
+    return annual_turnover * BP_MGN_WRT_ESTIM * bp_commission_rate(annual_turnover)
+
+def bp_commission_tier_name(annual_turnover: float) -> str:
+    """Devolve o nome do escalão activo."""
+    if annual_turnover >= 20_000_000: return "Acelerador +7,5%  (>20M)"
+    if annual_turnover >= 15_000_000: return "Acelerador +5,0%  (15M–20M)"
+    if annual_turnover >= 10_000_000: return "Acelerador +2,5%  (10M–15M)"
+    return "Base Permanente  (<10M)"

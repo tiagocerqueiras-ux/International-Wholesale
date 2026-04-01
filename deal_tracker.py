@@ -483,7 +483,9 @@ def get_executive_dashboard_data(year: int = None, salesperson_filter: str = Non
     Agrega dados para o Dashboard Executivo.
     Devolve: revenue, pipeline, margin, P&L estimado, por comercial, por mês.
     """
-    from config import PIPELINE_CLOSED_STATUSES, PIPELINE_ACTIVE_STATUSES, BP_OUR_CUT_PCT
+    from config import (PIPELINE_CLOSED_STATUSES, PIPELINE_ACTIVE_STATUSES,
+                        BP_OUR_CUT_PCT, BP_MGN_WRT_ESTIM,
+                        bp_commission_rate, bp_proveito, bp_commission_tier_name)
 
     def _parse_margin(val) -> float:
         try:
@@ -537,8 +539,21 @@ def get_executive_dashboard_data(year: int = None, salesperson_filter: str = Non
     _margin_base  = sum(_val(r) for r in revenue_rows if _val(r) > 0)
     avg_margin    = round(_margin_total / _margin_base, 2) if _margin_base else 0.0
 
-    gross_margin_value = round(total_revenue * avg_margin / 100, 2)
-    our_cut            = round(gross_margin_value * BP_OUR_CUT_PCT, 2)
+    gross_margin_value  = round(total_revenue * avg_margin / 100, 2)
+    our_cut             = round(gross_margin_value * BP_OUR_CUT_PCT, 2)  # legado
+
+    # Proveito calculado pela estrutura de comissões real (T/O × 3% × taxa escalão)
+    commission_rate_pct = bp_commission_rate(total_revenue)
+    our_cut_commission  = round(bp_proveito(total_revenue), 2)
+    tier_name           = bp_commission_tier_name(total_revenue)
+
+    # Próximo escalão (para indicador de progresso)
+    from config import BP_COMMISSION_TIERS
+    _next_threshold = None
+    for _tmin, _tmax, _extra in BP_COMMISSION_TIERS:
+        if total_revenue < _tmin:
+            _next_threshold = _tmin
+            break
 
     # Win rate
     total_closed = len(won_rows) + len(lost_rows)
@@ -589,17 +604,16 @@ def get_executive_dashboard_data(year: int = None, salesperson_filter: str = Non
         })
     sp_list.sort(key=lambda x: -x["revenue"])
 
-    # ── Monthly revenue + margin + proveito ──────────────────────────────
+    # ── Monthly revenue + margem WRT + proveito (estrutura comissões real) ──
     monthly:          dict = {}
-    monthly_margin:   dict = {}
-    monthly_proveito: dict = {}
+    monthly_margin:   dict = {}   # T/O × 3% margem WRT estimada
+    monthly_proveito: dict = {}   # T/O × 3% × taxa_comissão(escalão anual)
     for r in revenue_rows:
         dt_str = str(r.get("created_at",""))[:7]  # "YYYY-MM"
         if dt_str and len(dt_str) == 7:
             v      = _val(r)
-            mg_pct = _parse_margin(r.get("margin_pct"))   # e.g. 5.3 (percent)
-            mg_val = round(v * mg_pct / 100, 2)           # margem bruta €
-            prov   = round(mg_val * BP_OUR_CUT_PCT, 2)    # proveito BoxMovers €
+            mg_val = round(v * BP_MGN_WRT_ESTIM, 2)                    # margem WRT 3%
+            prov   = round(mg_val * commission_rate_pct, 2)             # proveito BoxMovers
             monthly[dt_str]          = round(monthly.get(dt_str, 0.0)          + v,      2)
             monthly_margin[dt_str]   = round(monthly_margin.get(dt_str, 0.0)   + mg_val, 2)
             monthly_proveito[dt_str] = round(monthly_proveito.get(dt_str, 0.0) + prov,   2)
@@ -624,8 +638,13 @@ def get_executive_dashboard_data(year: int = None, salesperson_filter: str = Non
         "won_deals":           len(won_rows),
         "lost_deals":          len(lost_rows),
         "by_salesperson":      sp_list,
-        "monthly_revenue":     monthly_sorted,
-        "monthly_margin":      monthly_margin_sorted,
-        "monthly_proveito":    monthly_proveito_sorted,
-        "status_counts":       status_counts,
+        "monthly_revenue":      monthly_sorted,
+        "monthly_margin":       monthly_margin_sorted,
+        "monthly_proveito":     monthly_proveito_sorted,
+        "status_counts":        status_counts,
+        # Comissões
+        "commission_rate_pct":  round(commission_rate_pct * 100, 1),  # e.g. 20.0
+        "our_cut_commission":   our_cut_commission,
+        "tier_name":            tier_name,
+        "next_tier_threshold":  _next_threshold,
     }
