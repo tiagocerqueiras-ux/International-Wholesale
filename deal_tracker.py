@@ -493,8 +493,8 @@ def get_executive_dashboard_data(
     Devolve: revenue, pipeline, margin, P&L estimado, por comercial, por mês.
     """
     from config import (PIPELINE_CLOSED_STATUSES, PIPELINE_ACTIVE_STATUSES,
-                        BP_OUR_CUT_PCT, BP_MGN_WRT_ESTIM,
-                        bp_commission_rate, bp_proveito, bp_commission_tier_name)
+                        BP_OUR_CUT_PCT,
+                        bp_commission_rate, bp_commission_tier_name)
 
     def _parse_margin(val) -> float:
         try:
@@ -556,9 +556,9 @@ def get_executive_dashboard_data(
     gross_margin_value  = round(total_revenue * avg_margin / 100, 2)
     our_cut             = round(gross_margin_value * BP_OUR_CUT_PCT, 2)  # legado
 
-    # Proveito calculado pela estrutura de comissões real (T/O × 3% × taxa escalão)
+    # Proveito calculado pela estrutura de comissões real (margem real × taxa escalão)
     commission_rate_pct = bp_commission_rate(total_revenue)
-    our_cut_commission  = round(bp_proveito(total_revenue), 2)
+    our_cut_commission  = round(gross_margin_value * commission_rate_pct, 2)
     tier_name           = bp_commission_tier_name(total_revenue)
 
     # Próximo escalão (para indicador de progresso)
@@ -618,16 +618,17 @@ def get_executive_dashboard_data(
         })
     sp_list.sort(key=lambda x: -x["revenue"])
 
-    # ── Monthly revenue + margem WRT + proveito (estrutura comissões real) ──
+    # ── Monthly revenue + margem WRT real + proveito (estrutura comissões real) ──
     monthly:          dict = {}
-    monthly_margin:   dict = {}   # T/O × 3% margem WRT estimada
-    monthly_proveito: dict = {}   # T/O × 3% × taxa_comissão(escalão anual)
+    monthly_margin:   dict = {}   # margem bruta real por deal (margin_pct do deal)
+    monthly_proveito: dict = {}   # margem real × taxa_comissão(escalão anual) — retroativo
     for r in revenue_rows:
         dt_str = str(r.get("created_at",""))[:7]  # "YYYY-MM"
         if dt_str and len(dt_str) == 7:
             v      = _val(r)
-            mg_val = round(v * BP_MGN_WRT_ESTIM, 2)                    # margem WRT 3%
-            prov   = round(mg_val * commission_rate_pct, 2)             # proveito BoxMovers
+            mg_pct = _parse_margin(r.get("margin_pct"))                  # margem real %
+            mg_val = round(v * mg_pct / 100, 2)                          # margem real €
+            prov   = round(mg_val * commission_rate_pct, 2)              # proveito BoxMovers
             monthly[dt_str]          = round(monthly.get(dt_str, 0.0)          + v,      2)
             monthly_margin[dt_str]   = round(monthly_margin.get(dt_str, 0.0)   + mg_val, 2)
             monthly_proveito[dt_str] = round(monthly_proveito.get(dt_str, 0.0) + prov,   2)
@@ -635,30 +636,77 @@ def get_executive_dashboard_data(
     monthly_margin_sorted   = dict(sorted(monthly_margin.items()))
     monthly_proveito_sorted = dict(sorted(monthly_proveito.items()))
 
+    # Margem % por mês (para gráfico)
+    monthly_margin_pct_sorted = {
+        m: round(monthly_margin.get(m, 0) / monthly[m] * 100, 2) if monthly.get(m) else 0.0
+        for m in monthly_sorted
+    }
+
     # ── Deals by status count ─────────────────────────────────────────────
     status_counts: dict = {}
     for r in rows:
         st_ = r.get("status","—")
         status_counts[st_] = status_counts.get(st_, 0) + 1
 
+    # ── Drivers de crescimento ────────────────────────────────────────────
+    # Top cliente por faturação
+    _client_rev: dict = {}
+    for r in revenue_rows:
+        _c = (r.get("client") or "—").strip()
+        _client_rev[_c] = _client_rev.get(_c, 0) + _val(r)
+    top_client     = max(_client_rev, key=_client_rev.get) if _client_rev else "—"
+    top_client_rev = round(_client_rev.get(top_client, 0), 0)
+
+    # Ticket médio por deal
+    avg_ticket = round(total_revenue / len(revenue_rows), 0) if revenue_rows else 0.0
+
+    # Top marca e mix A-Brand (parse dos products text)
+    _ABRANDS = {
+        "PHILIPS","SAMSUNG","SONY","BRAUN","LG","ASUS","LENOVO","HP","CANON","NIKON",
+        "APPLE","BOSE","SMEG","BABYLISS","DYSON","ROWENTA","TEFAL","MOULINEX",
+        "BOSCH","SIEMENS","WHIRLPOOL","KRUPS","DELONGHI","DE'LONGHI","FUJIFILM",
+        "GORENJE","HISENSE","TOSHIBA","PANASONIC","SHARP","TCL","XIAOMI","OPPO",
+    }
+    _brand_rev: dict = {}
+    _abrand_total = 0.0
+    for r in revenue_rows:
+        _prod_upper = (r.get("products") or "").upper()
+        _v = _val(r)
+        _matched = False
+        for _b in _ABRANDS:
+            if _b in _prod_upper:
+                _brand_rev[_b] = _brand_rev.get(_b, 0) + _v
+                _matched = True
+        if _matched:
+            _abrand_total += _v
+    top_brand  = max(_brand_rev, key=_brand_rev.get).title() if _brand_rev else "—"
+    mix_abrand = round(_abrand_total / total_revenue * 100, 0) if total_revenue else 0.0
+
     return {
-        "total_revenue":       total_revenue,
-        "total_pipeline":      total_pipeline,
-        "avg_margin":          avg_margin,
-        "gross_margin_value":  gross_margin_value,
-        "our_cut":             our_cut,
-        "win_rate":            win_rate,
-        "total_deals":         len(rows),
-        "won_deals":           len(won_rows),
-        "lost_deals":          len(lost_rows),
-        "by_salesperson":      sp_list,
-        "monthly_revenue":      monthly_sorted,
-        "monthly_margin":       monthly_margin_sorted,
-        "monthly_proveito":     monthly_proveito_sorted,
-        "status_counts":        status_counts,
+        "total_revenue":          total_revenue,
+        "total_pipeline":         total_pipeline,
+        "avg_margin":             avg_margin,
+        "gross_margin_value":     gross_margin_value,
+        "our_cut":                our_cut,
+        "win_rate":               win_rate,
+        "total_deals":            len(rows),
+        "won_deals":              len(won_rows),
+        "lost_deals":             len(lost_rows),
+        "by_salesperson":         sp_list,
+        "monthly_revenue":        monthly_sorted,
+        "monthly_margin":         monthly_margin_sorted,
+        "monthly_proveito":       monthly_proveito_sorted,
+        "monthly_margin_pct":     monthly_margin_pct_sorted,
+        "status_counts":          status_counts,
         # Comissões
-        "commission_rate_pct":  round(commission_rate_pct * 100, 1),  # e.g. 20.0
-        "our_cut_commission":   our_cut_commission,
-        "tier_name":            tier_name,
-        "next_tier_threshold":  _next_threshold,
+        "commission_rate_pct":    round(commission_rate_pct * 100, 1),
+        "our_cut_commission":     our_cut_commission,
+        "tier_name":              tier_name,
+        "next_tier_threshold":    _next_threshold,
+        # Drivers de crescimento
+        "top_client":             top_client,
+        "top_client_rev":         top_client_rev,
+        "avg_ticket":             avg_ticket,
+        "top_brand":              top_brand,
+        "mix_abrand":             mix_abrand,
     }

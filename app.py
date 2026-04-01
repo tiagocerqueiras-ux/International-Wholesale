@@ -22,7 +22,7 @@ from config import (
     BP_TAKE_RATE, BP_OUR_CUT_PCT, BP_FIXED_COSTS,
     BP_SCENARIO_BASE, BP_SCENARIO_OPT,
     bp_commission_rate, bp_proveito, bp_commission_tier_name,
-    BP_COMMISSION_TIERS, BP_COMMISSION_BASE_PCT, BP_MGN_WRT_ESTIM,
+    BP_COMMISSION_TIERS, BP_COMMISSION_BASE_PCT,
 )
 from sku_lookup import lookup_skus, search_by_name, build_cache
 from deal_tracker import add_deal, update_status, update_margin, update_deal_prices, duplicate_deal, delete_deal, list_deals, get_deal, deal_products_table, get_sku_price_history, update_deal_operational, get_pipeline_stats, get_executive_dashboard_data
@@ -851,14 +851,47 @@ if page == "🆕  Nova Cotação":
 # ══════════════════════════════════════════════════════════════════════════════
 elif page == "📊  Dashboard":
     import pandas as pd
-    st.title("📊 Dashboard Executivo — BoxMovers")
+    import plotly.graph_objects as go
+
+    # ── CSS cards ─────────────────────────────────────────────────────────────
+    st.markdown("""
+    <style>
+    .db-card {
+        background: #ffffff;
+        border-radius: 14px;
+        padding: 20px 22px 16px 22px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+        border: 1px solid #f0f2f5;
+        margin-bottom: 4px;
+    }
+    .db-label  { color: #8a94a6; font-size: 12px; font-weight: 500;
+                 letter-spacing: .4px; text-transform: uppercase; margin-bottom: 6px; }
+    .db-value  { font-size: 30px; font-weight: 700; color: #111827; line-height: 1.1; }
+    .db-delta-g{ color: #00B37D; font-size: 12px; margin-top: 6px; font-weight: 500; }
+    .db-delta-r{ color: #E53E3E; font-size: 12px; margin-top: 6px; font-weight: 500; }
+    .db-delta-n{ color: #6b7280; font-size: 12px; margin-top: 6px; font-weight: 500; }
+    .db-sec-title { font-size: 15px; font-weight: 600; color: #111827;
+                    margin: 0 0 14px 0; letter-spacing: -.1px; }
+    .db-bar-row   { margin-bottom: 14px; }
+    .db-bar-label { display: flex; justify-content: space-between;
+                    font-size: 13px; color: #374151; margin-bottom: 5px; }
+    .db-bar-track { background: #e8f5e9; border-radius: 6px; height: 9px; }
+    .db-bar-fill  { background: #00B37D; border-radius: 6px; height: 9px; }
+    .db-driver    { background:#ffffff; border-radius:12px; padding:16px 18px;
+                    box-shadow:0 1px 6px rgba(0,0,0,.05); border:1px solid #f0f2f5;
+                    text-align:center; }
+    .db-driver-lbl{ color:#8a94a6; font-size:11px; text-transform:uppercase;
+                    letter-spacing:.4px; margin-bottom:6px; }
+    .db-driver-val{ font-size:20px; font-weight:700; color:#111827; }
+    </style>
+    """, unsafe_allow_html=True)
 
     # ── Filtros de período ────────────────────────────────────────────────────
     from datetime import date, timedelta
     _today        = date.today()
     _current_year = _today.year
 
-    _db_fc1, _db_fc2 = st.columns([3, 3])
+    _db_fc1, _db_fc2, _db_fc3 = st.columns([3, 3, 1])
 
     _PERIOD_OPTIONS = [
         "📅 Ano civil",
@@ -870,7 +903,6 @@ elif page == "📊  Dashboard":
     ]
     _period_type = _db_fc1.selectbox("Período de análise", _PERIOD_OPTIONS, key="db_period_type")
 
-    # Calcular date_from / date_to e year consoante a selecção
     _db_year      = None
     _db_date_from = None
     _db_date_to   = None
@@ -881,25 +913,20 @@ elif page == "📊  Dashboard":
             format_func=lambda x: "Todos os anos" if x is None else str(x),
             key="db_year",
         )
-
     elif _period_type == "🔄 Últimos 12 meses":
         _db_date_from = str(_today - timedelta(days=365))[:10]
         _db_date_to   = str(_today)
         _db_fc2.info(f"📆 {_db_date_from} → {_db_date_to}")
-
     elif _period_type == "🔄 Últimos 6 meses":
         _db_date_from = str(_today - timedelta(days=183))[:10]
         _db_date_to   = str(_today)
         _db_fc2.info(f"📆 {_db_date_from} → {_db_date_to}")
-
     elif _period_type == "🔄 Últimos 3 meses":
         _db_date_from = str(_today - timedelta(days=91))[:10]
         _db_date_to   = str(_today)
         _db_fc2.info(f"📆 {_db_date_from} → {_db_date_to}")
-
     elif _period_type == "🗓️ Período personalizado":
         _pc1, _pc2 = _db_fc2.columns(2)
-        # Seletor mês/ano início
         _years_avail = list(range(_current_year - 2, _current_year + 1))
         _months_pt   = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"]
         _from_year  = _pc1.selectbox("Ano início",  _years_avail, index=len(_years_avail)-2, key="db_from_year")
@@ -911,9 +938,6 @@ elif page == "📊  Dashboard":
         _db_date_from = f"{_from_year}-{_from_month:02d}-01"
         _db_date_to   = f"{_to_year}-{_to_month:02d}-{calendar.monthrange(_to_year, _to_month)[1]:02d}"
 
-    # else "Todos os dados" → tudo None
-
-    # Filtro por comercial
     _db_sp_filter = None
     if _role in OWN_DATA_ONLY:
         _db_sp_filter = _cu.get("email")
@@ -922,13 +946,12 @@ elif page == "📊  Dashboard":
         if _db_own:
             _db_sp_filter = _cu.get("email")
 
-    # Cache key — invalida automaticamente quando o período muda
     _dash_cache_key = f"{_period_type}|{_db_year}|{_db_date_from}|{_db_date_to}|{_db_sp_filter}"
     if st.session_state.get("_dash_cache_key") != _dash_cache_key:
         st.session_state.pop("exec_dash", None)
         st.session_state["_dash_cache_key"] = _dash_cache_key
 
-    if st.button("🔄 Actualizar Dashboard", key="btn_db_refresh", type="primary"):
+    if _db_fc3.button("🔄 Actualizar", key="btn_db_refresh", type="primary", use_container_width=True):
         st.session_state.pop("exec_dash", None)
 
     if "exec_dash" not in st.session_state:
@@ -945,267 +968,245 @@ elif page == "📊  Dashboard":
         st.info("Sem dados disponíveis.")
         st.stop()
 
+    # ── Variáveis base ────────────────────────────────────────────────────────
     _rev              = _dash.get("total_revenue", 0)
     _pipe             = _dash.get("total_pipeline", 0)
     _margin           = _dash.get("avg_margin", 0)
     _gm_val           = _dash.get("gross_margin_value", 0)
-    _our_cut          = _dash.get("our_cut_commission", _dash.get("our_cut", 0))  # usa estrutura comissões real
+    _our_cut          = _dash.get("our_cut_commission", _dash.get("our_cut", 0))
     _ebitda_est       = _our_cut - BP_FIXED_COSTS
     _win_rate         = _dash.get("win_rate", 0)
     _take_rate        = round(_our_cut / _rev * 100, 2) if _rev > 0 else 0.0
-    _commission_rate  = _dash.get("commission_rate_pct", 0)   # e.g. 20.0%
+    _commission_rate  = _dash.get("commission_rate_pct", 0)
     _tier_name        = _dash.get("tier_name", "—")
     _next_threshold   = _dash.get("next_tier_threshold")
-    _mgn_wrt_val      = round(_rev * 0.03, 2)                 # T/O × 3% margem WRT
+    _monthly          = _dash.get("monthly_revenue",    {})
+    _monthly_margin   = _dash.get("monthly_margin",     {})
+    _monthly_proveito = _dash.get("monthly_proveito",   {})
+    _monthly_mgpct    = _dash.get("monthly_margin_pct", {})
 
-    # ── Tabs ──────────────────────────────────────────────────────────────
-    _d_tab1, _d_tab2, _d_tab3 = st.tabs([
-        "📈 KPIs & P&L", "👥 Por Comercial", "📅 Evolução Mensal"
-    ])
+    # MoM comparison (último mês vs penúltimo mês)
+    _sorted_months = sorted(_monthly.keys())
+    _mom_fat = _mom_mg = _mom_prov = _mom_mgpct = None
+    if len(_sorted_months) >= 2:
+        _lm = _sorted_months[-1]
+        _pm = _sorted_months[-2]
+        def _pct_delta(a, b): return round((a - b) / b * 100, 1) if b else 0.0
+        _mom_fat   = _pct_delta(_monthly.get(_lm, 0),        _monthly.get(_pm, 0))
+        _mom_mg    = _pct_delta(_monthly_margin.get(_lm, 0), _monthly_margin.get(_pm, 0))
+        _mom_prov  = _pct_delta(_monthly_proveito.get(_lm,0),_monthly_proveito.get(_pm, 0))
+        _mom_mgpct = round(_monthly_mgpct.get(_lm, 0) - _monthly_mgpct.get(_pm, 0), 1)
 
-    # ════════════════════════════════════════════════════════════════════
-    with _d_tab1:
-        st.subheader("Indicadores-Chave de Desempenho")
-
-        # Row 1: Revenue KPIs
-        _k1, _k2, _k3, _k4 = st.columns(4)
-        _rev_pct    = round(_rev / BP_TARGET_REVENUE * 100, 1) if BP_TARGET_REVENUE else 0
-        _be_pct     = round(_rev / BP_BREAK_EVEN * 100, 1)     if BP_BREAK_EVEN else 0
-        _ebitda_pct = round(_ebitda_est / BP_TARGET_EBITDA * 100, 1) if BP_TARGET_EBITDA and _ebitda_est > 0 else 0
-
-        _k1.metric(
-            "💶 Faturação Realizada",
-            f"{_rev:,.0f} €",
-            delta=f"{_rev_pct:.1f}% do alvo ({BP_TARGET_REVENUE/1e6:.0f}M €)",
-        )
-        _k2.metric(
-            "📦 Pipeline Ativo",
-            f"{_pipe:,.0f} €",
-            delta=f"Potencial: {_rev + _pipe:,.0f} €",
-        )
-        _k3.metric(
-            "🎯 Taxa de Sucesso",
-            f"{_win_rate:.1f}%",
-            delta=f"{_dash.get('won_deals',0)} ganhos · {_dash.get('lost_deals',0)} perdidos",
-        )
-        _k4.metric(
-            "📊 Margem Média",
-            f"{_margin:.1f}%",
+    def _kpi_card(label, value, delta_html=""):
+        st.markdown(
+            f'<div class="db-card"><div class="db-label">{label}</div>'
+            f'<div class="db-value">{value}</div>{delta_html}</div>',
+            unsafe_allow_html=True,
         )
 
-        # Break-even progress bar
-        st.divider()
-        st.subheader("🏁 Progresso vs. Break-Even")
-        _be_progress = min(_rev / BP_BREAK_EVEN, 1.0) if BP_BREAK_EVEN else 0
-        st.progress(_be_progress, text=f"Break-even: {BP_BREAK_EVEN/1e6:.1f}M €  ·  Alcançado: {_be_pct:.1f}%")
-        _target_progress = min(_rev / BP_TARGET_REVENUE, 1.0) if BP_TARGET_REVENUE else 0
-        st.progress(_target_progress, text=f"Alvo: {BP_TARGET_REVENUE/1e6:.0f}M €  ·  Alcançado: {_rev_pct:.1f}%")
+    def _delta_html(val, suffix="%", pp=False, invert=False):
+        if val is None: return ""
+        positive = (val >= 0) if not invert else (val < 0)
+        arrow    = "▲" if val >= 0 else "▼"
+        cls      = "db-delta-g" if positive else "db-delta-r"
+        tag      = "pp" if pp else suffix
+        return f'<div class="{cls}">{arrow} {abs(val):.1f}{tag} vs LM</div>'
 
-        st.divider()
-        st.subheader("💰 P&L Simplificado")
+    def _fmt_eur(v):
+        if abs(v) >= 1_000_000: return f"€{v/1_000_000:.2f}M"
+        if abs(v) >= 1_000:     return f"€{v/1_000:.0f}K"
+        return f"€{v:,.0f}"
 
-        _pl1, _pl2 = st.columns([2, 1])
-        with _pl1:
-            _pl_rows = [
-                {"Item": "📦 Faturação Total",          "Valor (€)": f"{_rev:>15,.2f}",       "Notas": f"Cenário alvo: {BP_TARGET_REVENUE/1e6:.0f}M €"},
-                {"Item": "📉 Margem Bruta WRT (3%)",    "Valor (€)": f"{_mgn_wrt_val:>15,.2f}","Notas": "T/O × 3% margem Worten estimada"},
-                {"Item": f"🎯 Proveito BM ({_commission_rate:.1f}% comissão)", "Valor (€)": f"{_our_cut:>15,.2f}", "Notas": f"Escalão: {_tier_name}  ·  Take-rate: {_take_rate:.2f}%"},
-                {"Item": "➖ Custos Fixos Anuais",       "Valor (€)": f"-{BP_FIXED_COSTS:>14,.2f}", "Notas": "2 colabs + 2 contractors"},
-                {"Item": "═══════════════════",          "Valor (€)": "═══════════════",       "Notas": ""},
-                {"Item": "📊 EBITDA Estimado",           "Valor (€)": f"{_ebitda_est:>15,.2f}", "Notas": f"Alvo: {BP_TARGET_EBITDA/1e3:.0f}k €"},
-            ]
-            st.dataframe(pd.DataFrame(_pl_rows), use_container_width=True, hide_index=True)
+    # ════════════════════════════════════════════════════════════════════════
+    # TOPO — KPI Cards
+    # ════════════════════════════════════════════════════════════════════════
+    _c1, _c2, _c3, _c4 = st.columns(4)
+    with _c1:
+        _kpi_card("Faturação YTD", _fmt_eur(_rev),
+                  _delta_html(_mom_fat, "%"))
+    with _c2:
+        _kpi_card("Margem Bruta", _fmt_eur(_gm_val),
+                  _delta_html(_mom_mg, "%"))
+    with _c3:
+        _kpi_card("Margem %", f"{_margin:.1f}%",
+                  _delta_html(_mom_mgpct, pp=True))
+    with _c4:
+        _kpi_card("Proveito Box Movers", _fmt_eur(_our_cut),
+                  _delta_html(_mom_prov, "%"))
 
-        with _pl2:
-            st.metric("🏆 Escalão Comissão", f"{_commission_rate:.1f}%",
-                      delta=_tier_name)
-            st.metric("EBITDA estimado", f"{_ebitda_est:,.0f} €",
-                      delta=f"Gap vs. alvo: {_ebitda_est - BP_TARGET_EBITDA:+,.0f} €",
-                      delta_color="normal" if _ebitda_est >= BP_TARGET_EBITDA else "inverse")
-            st.metric("Break-even", "✅ Atingido" if _rev >= BP_BREAK_EVEN else "❌ Não atingido",
-                      delta=f"{(_rev - BP_BREAK_EVEN):+,.0f} €",
-                      delta_color="normal" if _rev >= BP_BREAK_EVEN else "inverse")
+    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
-        # ── Escalões de comissão — progresso ─────────────────────────────
-        st.divider()
-        st.subheader("🚀 Aceleradores de Comissão")
-        from config import BP_COMMISSION_TIERS, BP_COMMISSION_BASE_PCT, BP_MGN_WRT_ESTIM as _mgn_wrt
-        _tier_cols = st.columns(4)
-        _tier_labels = ["Base  (<10M)", "Escalão 1  (10–15M)", "Escalão 2  (15–20M)", "Escalão 3  (>20M)"]
-        _tier_rates  = [17.5, 20.0, 22.5, 25.0]
-        _tier_prov   = [850_000 * _mgn_wrt * r/100 * 12 for r in [17.5, 20.0, 22.5, 25.0]]  # anualizado cap
-        _tier_caps   = [52_500, 90_000, 135_000, 187_500]
-        for _i, (_tc, _tl, _tr, _tcap) in enumerate(zip(_tier_cols, _tier_labels, _tier_rates, _tier_caps)):
-            _active = (
-                (_i == 0 and _rev < 10_000_000) or
-                (_i == 1 and 10_000_000 <= _rev < 15_000_000) or
-                (_i == 2 and 15_000_000 <= _rev < 20_000_000) or
-                (_i == 3 and _rev >= 20_000_000)
-            )
-            _badge = "🟢 **ACTIVO**" if _active else ""
-            _tc.markdown(f"**{_tl}**  {_badge}")
-            _tc.metric("Comissão", f"{_tr:.1f}%")
-            _tc.metric("Proveito máx/ano", f"{_tcap:,.0f} €")
+    # ════════════════════════════════════════════════════════════════════════
+    # MEIO — Gráfico principal + Proveito mensal
+    # ════════════════════════════════════════════════════════════════════════
+    _mid_left, _mid_right = st.columns([2, 1], gap="medium")
 
-        if _next_threshold:
-            _gap = _next_threshold - _rev
-            st.info(f"💡 Faltam **{_gap:,.0f} €** de faturação para activar o próximo acelerador  "
-                    f"(+{_gap/1e6:.2f}M → {_next_threshold/1e6:.0f}M T/O)", icon="⚡")
+    _month_names = {"01":"Jan","02":"Fev","03":"Mar","04":"Abr","05":"Mai","06":"Jun",
+                    "07":"Jul","08":"Ago","09":"Set","10":"Out","11":"Nov","12":"Dez"}
 
-        st.divider()
-        st.subheader("📋 Distribuição por Status")
-        _status_counts = _dash.get("status_counts", {})
-        if _status_counts:
-            _sc_rows = []
-            for _s in STATUSES:
-                _cnt = _status_counts.get(_s, 0)
-                if _cnt > 0:
-                    _sc_rows.append({"Status": f"{STATUS_EMOJI.get(_s,'')} {_s}", "Deals": _cnt})
-            if _sc_rows:
-                _sc_df = pd.DataFrame(_sc_rows).set_index("Status")
-                st.bar_chart(_sc_df)
+    with _mid_left:
+        st.markdown('<div class="db-card">', unsafe_allow_html=True)
+        st.markdown('<p class="db-sec-title">Evolução Mensal | Faturação vs Margem %</p>', unsafe_allow_html=True)
 
-    # ════════════════════════════════════════════════════════════════════
-    with _d_tab2:
-        st.subheader("👥 Performance por Comercial")
-        _sp_list = _dash.get("by_salesperson", [])
-        if not _sp_list:
-            st.info("Sem dados por comercial.")
-        else:
-            # KPIs globais (summed)
-            _sp_kpi1, _sp_kpi2, _sp_kpi3 = st.columns(3)
-            _sp_kpi1.metric("Comerciais activos", len([s for s in _sp_list if s["revenue"] > 0 or s["pipeline"] > 0]))
-            _sp_kpi2.metric("Total Deals Ganhos", sum(s["won"] for s in _sp_list))
-            _sp_kpi3.metric("Total Deals Perdidos", sum(s["lost"] for s in _sp_list))
+        if _monthly:
+            _all_months  = sorted(set(_monthly) | set(_monthly_mgpct))
+            _months_abbr = [m[5:] for m in _all_months]   # "YYYY-MM" → "MM"
+            _x_labels    = [_month_names.get(m, m) for m in _months_abbr]
+            _fat_vals    = [_monthly.get(m, 0.0)    for m in _all_months]
+            _mgpct_vals  = [_monthly_mgpct.get(m, 0.0) for m in _all_months]
 
-            st.divider()
-
-            _sp_df_rows = []
-            for _sp in _sp_list:
-                _sp_df_rows.append({
-                    "Comercial":       _sp["email"],
-                    "Faturação (€)":   f"{_sp['revenue']:,.0f}",
-                    "Pipeline (€)":    f"{_sp['pipeline']:,.0f}",
-                    "Deals Ganhos":    _sp["won"],
-                    "Deals Perdidos":  _sp["lost"],
-                    "Activos":         _sp["active"],
-                    "Margem Média %":  f"{_sp['avg_margin']:.1f}%",
-                    "Win Rate %":      f"{_sp['win_rate']:.1f}%",
-                })
-            st.dataframe(pd.DataFrame(_sp_df_rows), use_container_width=True, hide_index=True)
-
-            st.divider()
-            st.subheader("📊 Faturação por Comercial")
-            _sp_chart_rows = [
-                {"Comercial": s["email"].split("@")[0], "Faturação": s["revenue"]}
-                for s in _sp_list if s["revenue"] > 0
-            ]
-            if _sp_chart_rows:
-                _sp_chart = pd.DataFrame(_sp_chart_rows).set_index("Comercial")
-                st.bar_chart(_sp_chart)
-            else:
-                st.info("Sem faturação registada para gerar o gráfico.")
-
-    # ════════════════════════════════════════════════════════════════════
-    with _d_tab3:
-        st.subheader("📅 Evolução Mensal da Faturação")
-        _monthly          = _dash.get("monthly_revenue",  {})
-        _monthly_margin   = _dash.get("monthly_margin",   {})
-        _monthly_proveito = _dash.get("monthly_proveito", {})
-        if not _monthly:
-            st.info("Sem dados mensais disponíveis.  \n_Nota: os meses são calculados pela data de criação dos deals._")
-        else:
-            # ── Gráfico combinado: barras faturação + linhas margem/proveito ──
-            import plotly.graph_objects as go
-
-            _all_months = sorted(set(_monthly) | set(_monthly_margin) | set(_monthly_proveito))
-            _fat_vals  = [_monthly.get(m, 0.0)          for m in _all_months]
-            _mgn_vals  = [_monthly_margin.get(m, 0.0)   for m in _all_months]
-            _prov_vals = [_monthly_proveito.get(m, 0.0) for m in _all_months]
-
-            _fig = go.Figure()
-
-            # Barras — Faturação (eixo esquerdo)
-            # Azul steel: volume/receita — leitura imediata como "escala grande"
-            _fig.add_trace(go.Bar(
-                x=_all_months, y=_fat_vals,
-                name="Faturação (€)",
-                marker_color="#4A90D9",
-                marker_line_color="#2C5F8A",
-                marker_line_width=0.5,
-                opacity=0.90,
-                yaxis="y1",
+            _fig_main = go.Figure()
+            _fig_main.add_trace(go.Bar(
+                x=_x_labels, y=_fat_vals, name="Faturação (€)",
+                marker_color="#4A90D9", marker_line_width=0,
+                opacity=0.88, yaxis="y1",
             ))
-
-            # Linha — Margem Bruta Worten (eixo direito)
-            # Âmbar/laranja: alerta/atenção — margem é o que importa monitorizar
-            _fig.add_trace(go.Scatter(
-                x=_all_months, y=_mgn_vals,
-                name="Margem Bruta WRT (€)",
+            _fig_main.add_trace(go.Scatter(
+                x=_x_labels, y=_mgpct_vals, name="Margem %",
                 mode="lines+markers",
-                line=dict(color="#F5A623", width=3),
-                marker=dict(size=7, symbol="circle", color="#F5A623",
-                            line=dict(color="#C47D00", width=1.5)),
+                line=dict(color="#F5A623", width=2.5),
+                marker=dict(size=6, color="#F5A623"),
                 yaxis="y2",
             ))
-
-            # Linha — Proveito BoxMovers (eixo direito)
-            # Verde esmeralda: lucro/positivo — leitura instantânea como "resultado"
-            _fig.add_trace(go.Scatter(
-                x=_all_months, y=_prov_vals,
-                name="Proveito BoxMovers (€)",
-                mode="lines+markers",
-                line=dict(color="#27AE60", width=3, dash="dash"),
-                marker=dict(size=7, symbol="diamond", color="#27AE60",
-                            line=dict(color="#1A7A42", width=1.5)),
-                yaxis="y2",
-            ))
-
-            _fig.update_layout(
-                height=440,
-                margin=dict(t=40, b=50, l=10, r=10),
-                legend=dict(
-                    orientation="h", y=1.10, x=0,
-                    bgcolor="rgba(255,255,255,0.8)",
-                    bordercolor="#e0e0e0", borderwidth=1,
-                    font=dict(size=12),
-                ),
-                plot_bgcolor="#FAFAFA",
-                paper_bgcolor="white",
-                yaxis=dict(
-                    title=dict(text="Faturação (€)", font=dict(color="#2C5F8A", size=12)),
-                    tickfont=dict(color="#2C5F8A", size=11),
-                    tickformat=",.0f",
-                    showgrid=True,
-                    gridcolor="#E8EEF4",
-                    gridwidth=1,
-                    zeroline=False,
-                ),
-                yaxis2=dict(
-                    title=dict(text="Margem / Proveito (€)", font=dict(color="#C47D00", size=12)),
-                    tickfont=dict(color="#C47D00", size=11),
-                    tickformat=",.0f",
-                    overlaying="y",
-                    side="right",
-                    showgrid=False,
-                    zeroline=False,
-                ),
-                xaxis=dict(
-                    tickangle=-45,
-                    tickfont=dict(size=11),
-                    showgrid=False,
-                ),
+            _fig_main.update_layout(
+                height=300, margin=dict(t=10, b=30, l=0, r=0),
+                plot_bgcolor="white", paper_bgcolor="white",
+                legend=dict(orientation="h", y=1.12, x=0, font=dict(size=11),
+                            bgcolor="rgba(0,0,0,0)"),
+                yaxis=dict(tickformat=",.0f", showgrid=True, gridcolor="#f0f2f5",
+                           tickfont=dict(color="#4A90D9", size=10), zeroline=False),
+                yaxis2=dict(tickformat=".1f", ticksuffix="%", overlaying="y", side="right",
+                            showgrid=False, zeroline=False,
+                            tickfont=dict(color="#C47D00", size=10)),
+                xaxis=dict(showgrid=False, tickfont=dict(size=11)),
                 hovermode="x unified",
-                hoverlabel=dict(bgcolor="white", bordercolor="#ccc", font_size=12),
+                hoverlabel=dict(bgcolor="white", bordercolor="#ddd", font_size=11),
             )
-            st.plotly_chart(_fig, use_container_width=True)
+            st.plotly_chart(_fig_main, use_container_width=True)
+        else:
+            st.info("Sem dados para o período selecionado.")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with _mid_right:
+        st.markdown('<div class="db-card" style="height:100%">', unsafe_allow_html=True)
+        st.markdown('<p class="db-sec-title">Proveito Box Movers</p>', unsafe_allow_html=True)
+
+        if _monthly_proveito:
+            _sorted_prov  = sorted(_monthly_proveito.items())
+            _max_prov     = max(_monthly_proveito.values()) or 1
+            for _mk, _pv in _sorted_prov[-8:]:   # últimos 8 meses
+                _mn   = _month_names.get(_mk[5:], _mk[5:])
+                _pct  = min(int(_pv / _max_prov * 100), 100)
+                _lbl  = _fmt_eur(_pv)
+                st.markdown(f"""
+                <div class="db-bar-row">
+                  <div class="db-bar-label"><span>{_mn}</span><span><b>{_lbl}</b></span></div>
+                  <div class="db-bar-track"><div class="db-bar-fill" style="width:{_pct}%"></div></div>
+                </div>""", unsafe_allow_html=True)
+        else:
+            st.info("—")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+
+    # ════════════════════════════════════════════════════════════════════════
+    # FUNDO — Drivers de Crescimento
+    # ════════════════════════════════════════════════════════════════════════
+    _top_client = _dash.get("top_client", "—")
+    _top_brand  = _dash.get("top_brand",  "—")
+    _avg_ticket = _dash.get("avg_ticket", 0)
+    _mix_abrand = _dash.get("mix_abrand", 0)
+
+    st.markdown("**Drivers de Crescimento**")
+    _dr1, _dr2, _dr3, _dr4 = st.columns(4)
+    _dr1.markdown(f'<div class="db-driver"><div class="db-driver-lbl">Top Cliente</div>'
+                  f'<div class="db-driver-val">{_top_client}</div></div>', unsafe_allow_html=True)
+    _dr2.markdown(f'<div class="db-driver"><div class="db-driver-lbl">Top Marca</div>'
+                  f'<div class="db-driver-val">{_top_brand}</div></div>', unsafe_allow_html=True)
+    _dr3.markdown(f'<div class="db-driver"><div class="db-driver-lbl">Ticket Médio</div>'
+                  f'<div class="db-driver-val">{_fmt_eur(_avg_ticket)}</div></div>', unsafe_allow_html=True)
+    _dr4.markdown(f'<div class="db-driver"><div class="db-driver-lbl">Mix A-Brand</div>'
+                  f'<div class="db-driver-val">{int(_mix_abrand)}%</div></div>', unsafe_allow_html=True)
+
+    st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
+
+    # ════════════════════════════════════════════════════════════════════════
+    # Box Movers Trend + Decomposition
+    # ════════════════════════════════════════════════════════════════════════
+    with st.expander("📊 Box Movers Trend + Decomposition", expanded=True):
+        _bm_left, _bm_right = st.columns([3, 2], gap="medium")
+
+        with _bm_left:
+            # Gráfico: barras faturação + linha proveito
+            if _monthly:
+                _all_m2   = sorted(_monthly.keys())
+                _x2       = [_month_names.get(m[5:], m[5:]) for m in _all_m2]
+                _fat2     = [_monthly.get(m, 0)          for m in _all_m2]
+                _prov2    = [_monthly_proveito.get(m, 0) for m in _all_m2]
+                _mgn2     = [_monthly_margin.get(m, 0)   for m in _all_m2]
+
+                _fig2 = go.Figure()
+                _fig2.add_trace(go.Bar(
+                    x=_x2, y=_fat2, name="Faturação",
+                    marker_color="#4A90D9", opacity=0.85, yaxis="y1",
+                ))
+                _fig2.add_trace(go.Scatter(
+                    x=_x2, y=_mgn2, name="Margem Bruta (€)",
+                    mode="lines+markers", line=dict(color="#F5A623", width=2.5),
+                    marker=dict(size=6, color="#F5A623"), yaxis="y2",
+                ))
+                _fig2.add_trace(go.Scatter(
+                    x=_x2, y=_prov2, name="Proveito BM (€)",
+                    mode="lines+markers", line=dict(color="#27AE60", width=2.5, dash="dash"),
+                    marker=dict(size=6, symbol="diamond", color="#27AE60"), yaxis="y2",
+                ))
+                _fig2.update_layout(
+                    height=320, margin=dict(t=30, b=30, l=0, r=0),
+                    plot_bgcolor="white", paper_bgcolor="white",
+                    legend=dict(orientation="h", y=1.15, x=0, font=dict(size=11),
+                                bgcolor="rgba(0,0,0,0)"),
+                    yaxis=dict(tickformat=",.0f", showgrid=True, gridcolor="#f0f2f5",
+                               tickfont=dict(size=10), zeroline=False),
+                    yaxis2=dict(tickformat=",.0f", overlaying="y", side="right",
+                                showgrid=False, zeroline=False, tickfont=dict(size=10)),
+                    xaxis=dict(showgrid=False, tickfont=dict(size=11)),
+                    hovermode="x unified",
+                )
+                st.plotly_chart(_fig2, use_container_width=True)
+
+        with _bm_right:
+            # P&L decomposition
+            st.markdown("**P&L Decomposition**")
+            _be_pct2 = round(_rev / BP_BREAK_EVEN * 100, 1) if BP_BREAK_EVEN else 0
+            _pl_items = [
+                ("Faturação",      _fmt_eur(_rev),      f"Alvo {BP_TARGET_REVENUE/1e6:.0f}M €"),
+                (f"Margem ({_margin:.1f}%)", _fmt_eur(_gm_val), "Margem real ponderada"),
+                (f"Comissão {_commission_rate:.1f}%", _fmt_eur(_our_cut), _tier_name),
+                ("Custos Fixos",   f"-{_fmt_eur(BP_FIXED_COSTS)}", "2 colabs + 2 contractors"),
+                ("EBITDA",         _fmt_eur(_ebitda_est), f"Alvo {BP_TARGET_EBITDA/1e3:.0f}k €"),
+            ]
+            for _pi_label, _pi_val, _pi_note in _pl_items:
+                _col_a, _col_b = st.columns([3, 2])
+                _col_a.markdown(f"<span style='font-size:13px;color:#6b7280'>{_pi_label}</span>", unsafe_allow_html=True)
+                _col_b.markdown(f"<span style='font-size:13px;font-weight:600;color:#111827'>{_pi_val}</span>", unsafe_allow_html=True)
+                st.caption(_pi_note)
 
             st.divider()
+            _be_prog = min(_rev / BP_BREAK_EVEN, 1.0) if BP_BREAK_EVEN else 0
+            st.progress(_be_prog, text=f"Break-even {_be_pct2:.0f}% ({_fmt_eur(BP_BREAK_EVEN)})")
+            _tgt_prog = min(_rev / BP_TARGET_REVENUE, 1.0) if BP_TARGET_REVENUE else 0
+            _rev_pct2 = round(_rev / BP_TARGET_REVENUE * 100, 1) if BP_TARGET_REVENUE else 0
+            st.progress(_tgt_prog, text=f"Alvo {_rev_pct2:.0f}% ({_fmt_eur(BP_TARGET_REVENUE)})")
 
-            # ── Tabela acumulada com margem e proveito ────────────────────
-            _cum_total = 0.0
-            _cum_mg    = 0.0
-            _cum_prov  = 0.0
+            if _next_threshold:
+                _gap2 = _next_threshold - _rev
+                st.info(f"⚡ Faltam **{_fmt_eur(_gap2)}** para próximo acelerador  "
+                        f"(→ {_next_threshold/1e6:.0f}M)", icon="🚀")
+
+    # ── Tabela mensal detalhada (collapsible) ─────────────────────────────────
+    with st.expander("📋 Detalhe Mensal + Projecções"):
+        if _monthly:
+            _cum_total = _cum_mg = _cum_prov = 0.0
             _cum_rows  = []
             for _mk in sorted(_monthly.keys()):
                 _mv   = _monthly.get(_mk, 0.0)
@@ -1216,18 +1217,16 @@ elif page == "📊  Dashboard":
                 _cum_prov  += _prov
                 _mg_pct_m  = _mgv / _mv * 100 if _mv else 0.0
                 _cum_rows.append({
-                    "Mês":                     _mk,
-                    "Faturação (€)":           f"{_mv:,.0f}",
-                    "Margem Bruta (€)":        f"{_mgv:,.0f}",
-                    "Margem %":                f"{_mg_pct_m:.1f}%",
-                    "Proveito BM (€)":         f"{_prov:,.0f}",
-                    "Acumulado Fat. (€)":      f"{_cum_total:,.0f}",
-                    "Acumulado Prov. (€)":     f"{_cum_prov:,.0f}",
-                    "% Alvo Anual":            f"{_cum_total / BP_TARGET_REVENUE * 100:.1f}%",
+                    "Mês":                _mk,
+                    "Faturação (€)":      f"{_mv:,.0f}",
+                    "Margem Bruta (€)":   f"{_mgv:,.0f}",
+                    "Margem %":           f"{_mg_pct_m:.1f}%",
+                    "Proveito BM (€)":    f"{_prov:,.0f}",
+                    "Acumulado Fat. (€)": f"{_cum_total:,.0f}",
+                    "% Alvo Anual":       f"{_cum_total / BP_TARGET_REVENUE * 100:.1f}%",
                 })
             st.dataframe(pd.DataFrame(_cum_rows), use_container_width=True, hide_index=True)
 
-            # ── Projecções ────────────────────────────────────────────────
             _months_with_data = len(_monthly)
             if _months_with_data > 0:
                 _annualized      = round(_cum_total / _months_with_data * 12, 0)
@@ -1235,15 +1234,34 @@ elif page == "📊  Dashboard":
                 st.divider()
                 _pr1, _pr2, _pr3, _pr4 = st.columns(4)
                 _pr1.metric("📈 Projecção Faturação", f"{_annualized:,.0f} €",
-                            delta=f"vs alvo {BP_TARGET_REVENUE/1e6:.0f}M: {_annualized-BP_TARGET_REVENUE:+,.0f} €",
+                            delta=f"vs {BP_TARGET_REVENUE/1e6:.0f}M: {_annualized-BP_TARGET_REVENUE:+,.0f} €",
                             delta_color="normal" if _annualized >= BP_TARGET_REVENUE else "inverse")
                 _pr2.metric("💰 Projecção Proveito BM", f"{_annualized_prov:,.0f} €",
-                            delta=f"vs alvo 100k: {_annualized_prov-100_000:+,.0f} €",
+                            delta=f"vs 100k: {_annualized_prov-100_000:+,.0f} €",
                             delta_color="normal" if _annualized_prov >= 100_000 else "inverse")
                 _pr3.metric("🎯 vs Break-Even", f"{_annualized / BP_BREAK_EVEN * 100:.1f}%",
                             delta="✅ Acima" if _annualized >= BP_BREAK_EVEN else "❌ Abaixo")
                 _pr4.metric("📊 vs Cenário Base", f"{_annualized / BP_SCENARIO_BASE * 100:.1f}%",
                             delta=f"Base: {BP_SCENARIO_BASE/1e6:.0f}M €")
+
+    # ── Performance por Comercial (collapsible) ───────────────────────────────
+    with st.expander("👥 Performance por Comercial"):
+        _sp_list = _dash.get("by_salesperson", [])
+        if not _sp_list:
+            st.info("Sem dados por comercial.")
+        else:
+            _sp_df_rows = []
+            for _sp in _sp_list:
+                _sp_df_rows.append({
+                    "Comercial":      _sp["email"],
+                    "Faturação (€)":  f"{_sp['revenue']:,.0f}",
+                    "Pipeline (€)":   f"{_sp['pipeline']:,.0f}",
+                    "Ganhos":         _sp["won"],
+                    "Perdidos":       _sp["lost"],
+                    "Margem Média %": f"{_sp['avg_margin']:.1f}%",
+                    "Win Rate %":     f"{_sp['win_rate']:.1f}%",
+                })
+            st.dataframe(pd.DataFrame(_sp_df_rows), use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PÁGINA 2 — DEALS EM CURSO (inclui follow-up)
