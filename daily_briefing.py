@@ -171,14 +171,27 @@ def _get_supabase_pipeline() -> dict:
 _SYSTEM_PROMPT = """És o assistente comercial de Tiago Cerqueira, Export Manager B2B da Worten (BoxMovers / TDC).
 Tens acesso a dados reais de deals, pipeline e histórico de vendas.
 
+CRÍTICO: Responde EXCLUSIVAMENTE com HTML válido. NUNCA uses Markdown.
+- PROIBIDO: ##, **, *, |---|, backticks, --- separators
+- OBRIGATÓRIO: usa <h2>, <h3>, <ul>, <li>, <table>, <b>, <span> etc.
+- O output vai ser injectado directamente num email HTML. Markdown quebra o formato.
+
 Gera um briefing diário CONCISO e ACCIONÁVEL em Português de Portugal.
 Tom: profissional, directo, sem rodeios. Usa emojis com moderação.
 
-Estrutura obrigatória (HTML para email):
-1. 📋 TO-DOs DO DIA — lista priorizada (máx 8 itens), cada um com [URGÊNCIA: Alta/Média/Baixa]
-2. 🏭 PEDIDOS A FORNECEDORES — com base nas categorias/marcas mais procuradas, o que pedir/negociar
-3. 👥 CLIENTES A ABORDAR HOJE — clientes dormentes ou com oportunidade identificada, com razão concreta
-4. ⚡ ALERTAS — deals estagnados, oportunidades a não perder
+Estrutura obrigatória em HTML:
+
+<h2>📋 TO-DOs DO DIA</h2>
+Tabela com colunas: #, Tarefa, Urgência (Alta🔴/Média🟡/Baixa🟢). Máx 8 itens.
+
+<h2>🏭 PEDIDOS A FORNECEDORES</h2>
+Tabela com colunas: Marca/Categoria, Acção, Justificação. Com base nas categorias/marcas mais vendidas.
+
+<h2>👥 CLIENTES A ABORDAR HOJE</h2>
+Tabela com colunas: Cliente, Razão para contacto. Clientes dormentes ou com oportunidade concreta.
+
+<h2>⚡ ALERTAS</h2>
+Lista de alertas: deals estagnados, quedas de receita, oportunidades urgentes.
 
 Sê específico: usa nomes reais de clientes, marcas e categorias dos dados fornecidos.
 Não inventes dados que não estejam no contexto."""
@@ -202,12 +215,13 @@ def _generate_briefing(bm: dict, sb: dict) -> str:
 
         user_msg = f"""Dados de hoje ({today}):
 
-```json
 {json.dumps(context, ensure_ascii=False, indent=2)}
-```
 
-Gera o briefing diário completo em HTML (sem <html>/<body>, só o conteúdo interno).
-Inclui uma linha de resumo no início: receita PO activa total e nº de clientes com deals em aberto."""
+INSTRUÇÕES DE OUTPUT:
+- Responde APENAS com HTML puro — zero Markdown (sem ##, **, |---|, backticks)
+- Começa directamente com uma linha de resumo em <p>: receita PO activa total e nº de clientes
+- Segue a estrutura de 4 secções com tabelas HTML
+- Não incluas <html>, <head>, <body> — só o conteúdo interno"""
 
         msg = client.messages.create(
             model="claude-opus-4-5",
@@ -246,38 +260,52 @@ def _fallback_briefing(bm: dict, sb: dict) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. Envio via Outlook
+# 3. Envio via Resend (fiável em modo automatizado, sem dependência do Outlook)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _send_outlook(subject: str, html_body: str) -> bool:
-    """Envia email via Outlook COM (Python win32com)."""
-    try:
-        import win32com.client as wc
-        outlook = wc.Dispatch("outlook.application")
-        mail    = outlook.CreateItem(0)
-
-        mail.To          = RECIPIENT_EMAIL
-        mail.Subject     = subject
-        mail.HTMLBody    = f"""
-<html><body style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#1a1a2e;max-width:700px;margin:auto;">
+_EMAIL_WRAPPER = """
+<html><body style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#1a1a2e;max-width:700px;margin:auto;padding:16px;">
   <div style="background:linear-gradient(135deg,#1B2744,#2a3a6e);color:#fff;padding:18px 24px;border-radius:8px 8px 0 0;">
-    <span style="font-size:11px;letter-spacing:2px;opacity:.7;">TRANSGLOBAL DISTRIBUTION CHAIN</span><br>
+    <span style="font-size:11px;letter-spacing:2px;opacity:.7;display:block;">TRANSGLOBAL DISTRIBUTION CHAIN</span>
     <span style="font-size:20px;font-weight:700;">Daily Business Briefing</span>
+    <span style="font-size:12px;opacity:.8;float:right;margin-top:-18px;">{date}</span>
   </div>
-  <div style="background:#fff;padding:24px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px;">
-    {html_body}
+  <div style="background:#fff;padding:24px;border:1px solid #e2e8f0;border-top:3px solid #C49A3C;border-radius:0 0 8px 8px;">
+    {body}
   </div>
-  <p style="font-size:11px;color:#999;text-align:center;margin-top:12px;">
-    Gerado automaticamente por BoxMovers AI · {date.today().strftime('%d/%m/%Y')}
+  <p style="font-size:11px;color:#aaa;text-align:center;margin-top:10px;">
+    Gerado por BoxMovers AI · responde a este email para feedback
   </p>
 </body></html>"""
 
-        mail.Send()
-        print(f"[daily_briefing] Email enviado para {RECIPIENT_EMAIL}")
+
+def _send_email(subject: str, html_body: str) -> bool:
+    """Envia via Resend SDK (mesma infra que a cotacao_agent app)."""
+    try:
+        import resend
+        from config import _get_secret, SENDER_EMAIL, USER_EMAIL
+
+        resend.api_key = _get_secret("RESEND_API_KEY")
+
+        full_html = _EMAIL_WRAPPER.format(
+            date=date.today().strftime("%d/%m/%Y"),
+            body=html_body,
+        )
+
+        params = {
+            "from":     f"BoxMovers AI <{SENDER_EMAIL}>",
+            "to":       [RECIPIENT_EMAIL],
+            "subject":  subject,
+            "html":     full_html,
+            "reply_to": USER_EMAIL,
+        }
+        result = resend.Emails.send(params)
+        email_id = result.get("id") if hasattr(result, "get") else getattr(result, "id", None)
+        print(f"[daily_briefing] Email enviado | id={email_id}")
         return True
 
     except Exception as e:
-        print(f"[daily_briefing] Outlook error: {e}")
+        print(f"[daily_briefing] Resend error: {e}")
         traceback.print_exc()
         return False
 
@@ -312,13 +340,13 @@ def main():
     day_names_pt = {0:"Segunda",1:"Terça",2:"Quarta",3:"Quinta",4:"Sexta"}
     subject = f"[BoxMovers] Briefing {day_names_pt.get(weekday,'')} {today.strftime('%d/%m')} — {bm_data.get('n_po_clients',0)} PO activos · €{bm_data.get('total_po_value',0):,.0f}"
 
-    sent = _send_outlook(subject, html_content)
+    sent = _send_email(subject, html_content)
     if not sent:
         # Fallback: guardar em ficheiro se email falhar
         out_path = _BASE / f"briefings/briefing_{today.isoformat()}.html"
         out_path.parent.mkdir(exist_ok=True)
         out_path.write_text(f"<html><body>{html_content}</body></html>", encoding="utf-8")
-        print(f"[daily_briefing] Email falhou → guardado em {out_path}")
+        print(f"[daily_briefing] Email falhou | guardado em {out_path}")
 
 
 if __name__ == "__main__":

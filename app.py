@@ -341,6 +341,11 @@ with st.sidebar:
 
     # Nav filtrado pelo role
     _nav_pages = PAGES_BY_ROLE.get(_role, PAGES_BY_ROLE["comercial_interno"])
+    # Aplica redirect antes do widget ser instanciado (evita StreamlitAPIException)
+    if "_nav_redirect" in st.session_state:
+        _target = st.session_state.pop("_nav_redirect")
+        if _target in _nav_pages:
+            st.session_state["nav"] = _target
     page = st.radio("Nav", _nav_pages,
                     label_visibility="collapsed", key="nav")
     st.markdown("---")
@@ -579,6 +584,8 @@ if page == "🆕  Nova Cotação":
         if found:
             # Normalizar por SKU ID e adicionar ao cesto
             for ref, d in found.items():
+                if not d:
+                    continue
                 sku_id = d.get("sku_id", ref)
                 st.session_state["product_basket"][sku_id] = d
                 if sku_id not in st.session_state["so_manual"]:
@@ -2002,6 +2009,8 @@ elif page == "🏭  Pedido Fornecedor":
                 st.warning("Nenhum SKU encontrado.")
             else:
                 for ref, d in found.items():
+                    if not d:
+                        continue
                     sku_id = d.get("sku_id", ref)
                     st.session_state["sup_basket"][sku_id] = d
                     if sku_id not in st.session_state["sup_so_manual"]:
@@ -2141,7 +2150,7 @@ elif page == "🏭  Pedido Fornecedor":
                 _new_so[sku] = st.session_state["sup_so_manual"].get(sku, 0.0)
             st.session_state["product_basket"] = _new_basket
             st.session_state["so_manual"]       = _new_so
-            st.session_state["nav"]             = "🆕  Nova Cotação"
+            st.session_state["_nav_redirect"]   = "🆕  Nova Cotação"
             st.rerun()
 
         # Pré-visualização do pedido gerado
@@ -2541,7 +2550,7 @@ elif page == "👥  CRM — Clientes":
                             "email":    full2.get("contact_email",""),
                             "country":  full2.get("country",""),
                         }
-                        st.session_state["nav"] = "🆕  Nova Cotação"
+                        st.session_state["_nav_redirect"] = "🆕  Nova Cotação"
                         st.rerun()
 
     # ════════════════════════════════════════════════════════════════════════
@@ -2623,7 +2632,7 @@ elif page == "👥  CRM — Clientes":
                                 "email":   _sr_em,
                                 "country": _sr_ctry,
                             }
-                            st.session_state["nav"] = "🆕  Nova Cotação"
+                            st.session_state["_nav_redirect"] = "🆕  Nova Cotação"
                             st.rerun()
                     st.divider()
 
@@ -3579,15 +3588,15 @@ elif page == "🚚  Logística":
                         include_insurance = _lt_ins,
                         cache             = _tc,
                     )
-                    st.session_state["lt_quotes"]      = _quotes
-                    st.session_state["lt_c_cp"]        = _c_cp
-                    st.session_state["lt_pallets"]     = int(_lt_pallets)
-                    st.session_state["lt_country_sel"] = _lt_country
+                    st.session_state["lt_quotes"]       = _quotes
+                    st.session_state["lt_c_cp"]         = _c_cp
+                    st.session_state["lt_pallets_last"] = int(_lt_pallets)
+                    st.session_state["lt_country_sel"]  = _lt_country
 
                 _quotes = st.session_state.get("lt_quotes")
                 if _quotes is not None:
                     _c_cp_disp = st.session_state.get("lt_c_cp", "")
-                    _np_disp   = st.session_state.get("lt_pallets", 1)
+                    _np_disp   = st.session_state.get("lt_pallets_last", 1)
                     _ctry_disp = st.session_state.get("lt_country_sel", "")
 
                     st.divider()
@@ -3738,7 +3747,7 @@ elif page == "🚚  Logística":
                                         deal           = _tr_deal_obj,
                                         carrier_name   = st.session_state.get("lt_carrier_sel",""),
                                         carrier_email  = _tr_carrier_email,
-                                        n_pallets      = int(st.session_state.get("lt_pallets", 1)),
+                                        n_pallets      = int(st.session_state.get("lt_pallets_last", st.session_state.get("lt_pallets", 1))),
                                         cargo_value    = float(st.session_state.get("lt_cargo", 0)),
                                         collection_date= _tr_collection,
                                     )
