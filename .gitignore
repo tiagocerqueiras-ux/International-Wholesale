@@ -4,7 +4,9 @@
 *.env
 
 # Cache local (grande, não vai ao GitHub)
-.cache/
+.cache/*
+# Excepção: transport_cache.json precisa de estar no Railway (sem Excel disponível)
+!.cache/transport_cache.json
 emails_out/
 
 # Python

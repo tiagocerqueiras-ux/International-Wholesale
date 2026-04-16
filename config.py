@@ -96,8 +96,9 @@ except Exception:
 
 CACHE_DIR       = Path(__file__).parent / ".cache"
 SIMULATOR_CACHE = CACHE_DIR / "simulator_index.json"
-TRANSPORT_FILE  = BASE_DIR / "Docs" / "Simulador_Exportacao_V2.26 - B2B.xlsx"
-TRANSPORT_CACHE = CACHE_DIR / "transport_cache.json"
+TRANSPORT_FILE  = BASE_DIR / "Docs" / "Simulador_Exportacao_V4.26 - B2B.xlsx"
+# transport_cache em pasta commitada (Railway não tem Excel local)
+TRANSPORT_CACHE = Path(__file__).parent / "data" / "transport_cache.json"
 EMAILS_OUT_DIR  = Path(__file__).parent / "emails_out"
 
 # ── Simulador ─────────────────────────────────────────────────────────────────

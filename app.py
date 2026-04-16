@@ -3809,7 +3809,7 @@ elif page == "🚚  Logística":
             st.error(
                 "❌ **Ficheiro Excel de tarifas não encontrado neste servidor.**\n\n"
                 "O simulador logístico funciona apenas em ambiente local onde o ficheiro "
-                "`Simulador_Exportacao_V2.26 - B2B.xlsx` está disponível.\n\n"
+                "`Simulador_Exportacao_V4.26 - B2B.xlsx` está disponível.\n\n"
                 "**Para activar no cloud:** constrói o cache localmente e faz commit do ficheiro "
                 "`.cache/transport_cache.json` para o repositório."
             )

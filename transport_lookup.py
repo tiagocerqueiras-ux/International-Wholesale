@@ -2,7 +2,7 @@
 Transport Lookup — Simulador Logístico
 ======================================
 Compara tarifas de 6 transportadoras para envios B2B.
-Fonte: Simulador_Exportacao_V2.26 - B2B.xlsx
+Fonte: Simulador_Exportacao_V4.26 - B2B.xlsx
 """
 
 import json
