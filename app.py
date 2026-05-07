@@ -566,6 +566,71 @@ if page == "🆕  Nova Cotação":
     add_clicked    = btn_add.button("➕  Adicionar ao Cesto", type="primary")
     manual_clicked = btn_manual.button("✏️  Produto Manual")
 
+    # ── Importar lista de SKUs/EANs de ficheiro ───────────────────────────────
+    with st.expander("📥 Importar lista de produtos (CSV / TXT / XLSX)", expanded=False):
+        st.caption(
+            "O ficheiro deve ter uma coluna chamada **SKU** ou **EAN** "
+            "(senão será usada a primeira coluna). Aceita CSV, TXT (separado por vírgula/espaço) e XLSX."
+        )
+        upl_basket = st.file_uploader(
+            "Ficheiro com SKUs ou EANs",
+            type=["csv", "txt", "xlsx", "xls"],
+            key="upl_basket_cot",
+        )
+        upl_mode = st.radio(
+            "O ficheiro contém:",
+            ["SKU ID", "EAN"],
+            horizontal=True, key="upl_basket_mode_cot",
+        )
+        if upl_basket is not None and st.button("📥 Importar para o Cesto", key="btn_imp_basket"):
+            # Ler códigos
+            imported = []
+            try:
+                name = upl_basket.name.lower()
+                prefer = ("sku", "sku_id", "código", "codigo") if upl_mode == "SKU ID" else ("ean", "eans", "barcode")
+                if name.endswith((".xlsx", ".xls")):
+                    import pandas as _pd_imp
+                    _df = _pd_imp.read_excel(upl_basket, dtype=str)
+                    _col = next((c for c in _df.columns if str(c).strip().lower() in prefer), _df.columns[0])
+                    imported = [str(x).strip() for x in _df[_col].dropna() if str(x).strip()]
+                elif name.endswith(".csv"):
+                    import pandas as _pd_imp
+                    from io import StringIO as _SIO
+                    _content = upl_basket.read().decode("utf-8-sig", errors="ignore")
+                    _sep = ";" if _content.count(";") > _content.count(",") else ","
+                    _df = _pd_imp.read_csv(_SIO(_content), sep=_sep, dtype=str)
+                    _col = next((c for c in _df.columns if str(c).strip().lower() in prefer), _df.columns[0])
+                    imported = [str(x).strip() for x in _df[_col].dropna() if str(x).strip()]
+                else:
+                    _content = upl_basket.read().decode("utf-8", errors="ignore")
+                    imported = [s.strip() for s in re.split(r'[,;\s]+', _content) if s.strip()]
+            except Exception as e:
+                st.error(f"Erro a ler ficheiro: {e}")
+
+            if imported:
+                with st.spinner(f"A consultar {len(imported)} código(s)..."):
+                    _idx = load_index()
+                    if upl_mode == "SKU ID":
+                        _res = {s: _idx.get(s) for s in imported}
+                    else:
+                        _ean_idx = {v.get("ean", "").strip(): v for v in _idx.values() if v.get("ean")}
+                        _res = {e: _ean_idx.get(e) for e in imported}
+
+                _found = {k: v for k, v in _res.items() if v}
+                _not_found = [k for k, v in _res.items() if not v]
+
+                for _ref, _d in _found.items():
+                    _sid = _d.get("sku_id", _ref)
+                    st.session_state["product_basket"][_sid] = _d
+                    st.session_state["so_manual"].setdefault(_sid, 0.0)
+
+                if _found:
+                    st.success(f"✅ {len(_found)} produto(s) adicionado(s) ao cesto.")
+                if _not_found:
+                    st.warning(f"❌ {len(_not_found)} não encontrado(s): {', '.join(_not_found[:20])}"
+                               + (f" ... (+{len(_not_found)-20})" if len(_not_found) > 20 else ""))
+                st.rerun()
+
     if add_clicked and ids_raw.strip():
         id_list = [s.strip() for s in re.split(r'[,\s]+', ids_raw.strip()) if s.strip()]
         with st.spinner(f"A consultar {len(id_list)} produto(s)..."):
@@ -842,8 +907,57 @@ if page == "🆕  Nova Cotação":
         s_payment  = st.session_state.get("payment_conditions", PAYMENT_CONDITIONS_DEFAULT)
         st.caption(f"📋 **Incoterm:** {s_incoterm}  ·  💳 **Pagamento:** {s_payment}  ·  🧾 **{vat_sel}**")
 
-        # Botão limpar cesto
-        if st.button("🗑️  Limpar cesto", key="clear_basket"):
+        # ── Ações do cesto: Exportar CSV/XLSX + Limpar ────────────────────────
+        _bx_exp1, _bx_exp2, _bx_exp3 = st.columns([2, 2, 2])
+
+        # Construir DataFrame do cesto
+        import pandas as _pd_bx, io as _io_bx
+        _basket_rows = []
+        for _sk, _d in basket.items():
+            _so_neg   = so_manual_map.get(_sk, 0.0)
+            _fc_sim   = _fc_sim_for(_d)
+            _fc_final = round(_fc_sim - _so_neg, 4)
+            _m_sku    = _mg_override.get(_sk, s_margin_val)
+            _pvp_un   = calc_pvp(_fc_final, s_margin_mode, _m_sku)
+            _qty      = qty_map.get(_sk, 1)
+            _basket_rows.append({
+                "Qty":           _qty,
+                "SKU":           _sk,
+                "EAN":           _d.get("ean", ""),
+                "Marca":         _d.get("brand", ""),
+                "Produto":       _d.get("name", ""),
+                "FC_Simulador":  _fc_sim,
+                "SO_Negociado":  _so_neg,
+                "FC_Final":      _fc_final,
+                "Margem":        _m_sku,
+                "Margem_Modo":   "%" if s_margin_mode == "Percentagem (%)" else "€/un.",
+                "Preco_Cliente": _pvp_un,
+                "EIS_DA":        _d.get("eis_da") or 0,
+                "Sell_In":       _d.get("sell_in") or "",
+            })
+        _df_basket = _pd_bx.DataFrame(_basket_rows)
+        _ts_b = datetime.now().strftime("%Y%m%d_%H%M")
+
+        _bx_exp1.download_button(
+            "⬇️ Exportar CSV",
+            data=_df_basket.to_csv(index=False, sep=";").encode("utf-8-sig"),
+            file_name=f"cesto_{_ts_b}.csv",
+            mime="text/csv",
+            use_container_width=True,
+            key="dl_basket_csv",
+        )
+        _xlsx_bb = _io_bx.BytesIO()
+        with _pd_bx.ExcelWriter(_xlsx_bb, engine="openpyxl") as _wr:
+            _df_basket.to_excel(_wr, sheet_name="Cesto", index=False)
+        _bx_exp2.download_button(
+            "⬇️ Exportar XLSX",
+            data=_xlsx_bb.getvalue(),
+            file_name=f"cesto_{_ts_b}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="dl_basket_xlsx",
+        )
+        if _bx_exp3.button("🗑️  Limpar cesto", key="clear_basket", use_container_width=True):
             _clear_state()
             st.rerun()
 
@@ -3830,57 +3944,233 @@ elif page == "🚚  Logística":
 # ══════════════════════════════════════════════════════════════════════════════
 elif page == "🔍  Pesquisar Produto":
     st.title("🔍 Pesquisar Produto no Simulador")
-    tab_nome, tab_ean = st.tabs(["🔤 Por Nome / Marca","📊 Por EAN"])
+    tab_nome, tab_ean, tab_sku = st.tabs(["🔤 Por Nome / Marca","📊 Por EAN","🔢 Por SKU"])
 
+    # ── Helpers internos ──────────────────────────────────────────────────────
+    def _parse_codes(raw: str, min_len: int = 1):
+        """Divide texto por vírgula/espaço/nova-linha/ponto-e-vírgula."""
+        if not raw:
+            return []
+        return [s.strip() for s in re.split(r'[,;\s]+', raw.strip()) if s.strip() and len(s.strip()) >= min_len]
+
+    def _read_codes_from_file(uploaded, prefer_cols=("ean","eans","sku","sku_id","barcode","código","codigo")):
+        """Lê EANs/SKUs de CSV/TXT/XLSX. Devolve lista de strings."""
+        try:
+            name = uploaded.name.lower()
+            if name.endswith(".xlsx") or name.endswith(".xls"):
+                import pandas as _pd_imp
+                df_imp = _pd_imp.read_excel(uploaded, dtype=str)
+                col = next((c for c in df_imp.columns
+                            if str(c).strip().lower() in prefer_cols),
+                           df_imp.columns[0])
+                return [str(x).strip() for x in df_imp[col].dropna() if str(x).strip()]
+            elif name.endswith(".csv"):
+                import pandas as _pd_imp
+                content = uploaded.read().decode("utf-8-sig", errors="ignore")
+                # Tenta detetar separador
+                sep = ";" if content.count(";") > content.count(",") else ","
+                from io import StringIO as _SIO
+                df_imp = _pd_imp.read_csv(_SIO(content), sep=sep, dtype=str)
+                col = next((c for c in df_imp.columns
+                            if str(c).strip().lower() in prefer_cols),
+                           df_imp.columns[0])
+                return [str(x).strip() for x in df_imp[col].dropna() if str(x).strip()]
+            else:  # txt
+                content = uploaded.read().decode("utf-8", errors="ignore")
+                return [s.strip() for s in re.split(r'[,;\s]+', content) if s.strip()]
+        except Exception as e:
+            st.error(f"Erro a ler ficheiro: {e}")
+            return []
+
+    def _row_for_export(r):
+        return {
+            "EAN":           r.get("ean",""),
+            "SKU":           r.get("sku_id",""),
+            "Marca":         r.get("brand",""),
+            "Produto":       r.get("name",""),
+            "FC_Simulador":  r.get("ufc_raw") or "",
+            "PVP_PT":        r.get("pvp_pt") or "",
+            "EIS_DA":        r.get("eis_da") or "",
+            "Sell_In":       r.get("sell_in") or "",
+        }
+
+    def _export_buttons(rows, key_prefix: str):
+        """Renderiza botões CSV/XLSX e 'adicionar ao cesto'."""
+        if not rows:
+            return
+        import pandas as _pd_x, io as _io_x
+        df_out = _pd_x.DataFrame(rows)
+        ts = datetime.now().strftime("%Y%m%d_%H%M")
+
+        bx1, bx2, bx3 = st.columns([2, 2, 4])
+        bx1.download_button(
+            "⬇️ Exportar CSV",
+            data=df_out.to_csv(index=False, sep=";").encode("utf-8-sig"),
+            file_name=f"pesquisa_{key_prefix}_{ts}.csv",
+            mime="text/csv",
+            use_container_width=True,
+            key=f"dl_csv_{key_prefix}",
+        )
+        xlsx_buf = _io_x.BytesIO()
+        with _pd_x.ExcelWriter(xlsx_buf, engine="openpyxl") as wr:
+            df_out.to_excel(wr, sheet_name="Produtos", index=False)
+        bx2.download_button(
+            "⬇️ Exportar XLSX",
+            data=xlsx_buf.getvalue(),
+            file_name=f"pesquisa_{key_prefix}_{ts}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key=f"dl_xlsx_{key_prefix}",
+        )
+
+    def _add_to_basket_button(found_dict, key_prefix: str):
+        if not found_dict:
+            return
+        if st.button(
+            f"➕ Adicionar {len(found_dict)} ao Cesto Nova Cotação",
+            type="primary",
+            use_container_width=True,
+            key=f"to_basket_{key_prefix}",
+        ):
+            st.session_state.setdefault("product_basket", {})
+            st.session_state.setdefault("so_manual", {})
+            for r in found_dict.values():
+                if not r:
+                    continue
+                sid = r.get("sku_id")
+                if not sid:
+                    continue
+                st.session_state["product_basket"][sid] = r
+                st.session_state["so_manual"].setdefault(sid, 0.0)
+            st.session_state["_nav_redirect"] = "🆕  Nova Cotação"
+            st.success(f"✅ {len(found_dict)} produto(s) adicionado(s) ao cesto. A redirecionar...")
+            st.rerun()
+
+    def _render_product_table(items):
+        hh = st.columns([1.2, 1.6, 3, 1.5, 1.5, 1.5, 1.2])
+        for col, lbl in zip(hh, ["SKU", "EAN", "Produto", "FC Simulador", "PVP PT", "EIS DA", "Sell-In"]):
+            col.caption(lbl)
+        st.markdown("---")
+        for r in items:
+            uc = r.get("ufc_raw"); eis_da = r.get("eis_da") or 0; si = r.get("sell_in")
+            cc = st.columns([1.2, 1.6, 3, 1.5, 1.5, 1.5, 1.2])
+            cc[0].markdown(f"**`{r.get('sku_id','—')}`**")
+            cc[1].markdown(f"`{r.get('ean','—')}`")
+            cc[2].markdown(f"{r.get('brand','—')} · {r.get('name','')[:48]}")
+            cc[3].markdown(fmt4(uc) if uc else "⚠️ N/D")
+            cc[4].markdown(fmt4(r.get("pvp_pt")))
+            cc[5].markdown(f"{'⚠️ ' if eis_da > 0 else '—'}{fmt4(eis_da) if eis_da > 0 else ''}")
+            cc[6].markdown(f"{'✅' if si else '—'}")
+
+    # ── TAB: Por Nome / Marca ─────────────────────────────────────────────────
     with tab_nome:
         q = st.text_input("Nome / marca", placeholder="Ex: Philips Airfryer, Samsung...")
         if q and len(q) >= 3:
             with st.spinner("A pesquisar..."):
-                res = search_by_name(q, max_results=20)
+                res = search_by_name(q, max_results=50)
             if not res:
                 st.warning("Sem resultados.")
             else:
                 st.success(f"{len(res)} resultado(s)")
-                hh = st.columns([1.2,1.6,3,1.5,1.5,1.5,1.2])
-                for col,lbl in zip(hh,["SKU","EAN","Produto","FC Simulador","PVP PT","EIS DA","Sell-In"]):
-                    col.caption(lbl)
+                _render_product_table(res)
                 st.markdown("---")
-                for r in res:
-                    uc = r.get("ufc_raw"); eis_da = r.get("eis_da") or 0; si = r.get("sell_in")
-                    cc = st.columns([1.2,1.6,3,1.5,1.5,1.5,1.2])
-                    cc[0].markdown(f"**`{r['sku_id']}`**")
-                    cc[1].markdown(f"`{r.get('ean','—')}`")
-                    cc[2].markdown(f"{r.get('brand','—')} · {r.get('name','')[:48]}")
-                    cc[3].markdown(fmt4(uc) if uc else "⚠️ N/D")
-                    cc[4].markdown(fmt4(r.get("pvp_pt")))
-                    cc[5].markdown(f"{'⚠️ ' if eis_da>0 else '—'}{fmt4(eis_da) if eis_da>0 else ''}")
-                    cc[6].markdown(f"{'✅' if si else '—'}")
+                _export_buttons([_row_for_export(r) for r in res], key_prefix="nome")
+                _add_to_basket_button({r.get("sku_id"): r for r in res if r.get("sku_id")}, key_prefix="nome")
         elif q:
             st.caption("Insere pelo menos 3 caracteres.")
 
+    # ── TAB: Por EAN (multi + import + export) ────────────────────────────────
     with tab_ean:
-        eq = st.text_input("Código EAN", placeholder="Ex: 5908099018610")
-        if eq and len(eq) >= 8:
-            with st.spinner("A pesquisar por EAN..."):
+        st.caption("💡 Cola **um ou vários** EANs (separados por vírgula, espaço ou nova linha) ou faz upload de ficheiro.")
+        eq_raw = st.text_area(
+            "Códigos EAN",
+            placeholder="Ex: 5908099018610, 8806090268380\n4548736134478",
+            height=80,
+            key="ean_search_raw",
+        )
+        upl_ean = st.file_uploader(
+            "📥 Importar lista de EANs (CSV / TXT / XLSX)",
+            type=["csv", "txt", "xlsx", "xls"],
+            key="ean_search_upl",
+            help="O ficheiro deve ter uma coluna chamada 'EAN' (ou a primeira coluna será usada).",
+        )
+        if upl_ean is not None:
+            imported = _read_codes_from_file(upl_ean, prefer_cols=("ean", "eans", "barcode"))
+            if imported:
+                st.success(f"📥 {len(imported)} EAN(s) lidos do ficheiro.")
+                eq_raw = (eq_raw + "\n" + " ".join(imported)).strip()
+
+        ean_list = _parse_codes(eq_raw, min_len=8)
+        if eq_raw and not ean_list:
+            st.caption("Insere pelo menos um EAN com 8+ dígitos.")
+        elif ean_list:
+            with st.spinner(f"A pesquisar {len(ean_list)} EAN(s)..."):
                 idx = load_index()
-                r   = next((v for v in idx.values() if v.get("ean","").strip()==eq.strip()), None)
-            if not r:
-                st.warning(f"EAN **{eq}** não encontrado.")
-            else:
-                st.success(f"✅ SKU: **{r['sku_id']}**")
-                c1,c2,c3 = st.columns(3)
-                c1.markdown(f"**SKU:** `{r['sku_id']}`")
-                c2.markdown(f"**EAN:** `{r.get('ean','—')}`")
-                c3.markdown(f"**Marca:** {r.get('brand','—')}")
-                st.markdown(f"**Produto:** {r.get('name','—')}")
-                m1,m2,m3,m4 = st.columns(4)
-                m1.metric("UFC Raw", fmt4(r.get("ufc_raw")) if r.get("ufc_raw") else "N/D")
-                m2.metric("PVP Portugal", fmt4(r.get("pvp_pt")) if r.get("pvp_pt") else "N/D")
-                m3.metric("EIS Dir. Autor", fmt4(r.get("eis_da")) if r.get("eis_da") else "—")
-                m4.metric("Sell-In", fmt4(r.get("sell_in")) if r.get("sell_in") else "—")
-                st.info(f"💡 Usa o SKU **{r['sku_id']}** na página **Nova Cotação**.")
-        elif eq:
-            st.caption("Insere pelo menos 8 dígitos.")
+                ean_idx = {v.get("ean", "").strip(): v for v in idx.values() if v.get("ean")}
+                results = {e: ean_idx.get(e) for e in ean_list}
+
+            found     = {k: v for k, v in results.items() if v}
+            not_found = [k for k, v in results.items() if not v]
+
+            cstat1, cstat2 = st.columns(2)
+            cstat1.metric("✅ Encontrados", len(found))
+            cstat2.metric("❌ Não encontrados", len(not_found))
+
+            if found:
+                _render_product_table(list(found.values()))
+                st.markdown("---")
+                _export_buttons([_row_for_export(r) for r in found.values()], key_prefix="ean")
+                _add_to_basket_button(found, key_prefix="ean")
+
+            if not_found:
+                with st.expander(f"❌ EANs não encontrados ({len(not_found)})", expanded=False):
+                    st.code("\n".join(not_found))
+
+    # ── TAB: Por SKU (multi + import + export) ────────────────────────────────
+    with tab_sku:
+        st.caption("💡 Cola **um ou vários** SKUs (separados por vírgula, espaço ou nova linha) ou faz upload de ficheiro.")
+        sq_raw = st.text_area(
+            "SKUs",
+            placeholder="Ex: 2062910, 2062944\n2050001",
+            height=80,
+            key="sku_search_raw",
+        )
+        upl_sku = st.file_uploader(
+            "📥 Importar lista de SKUs (CSV / TXT / XLSX)",
+            type=["csv", "txt", "xlsx", "xls"],
+            key="sku_search_upl",
+            help="O ficheiro deve ter uma coluna chamada 'SKU' (ou a primeira coluna será usada).",
+        )
+        if upl_sku is not None:
+            imported = _read_codes_from_file(upl_sku, prefer_cols=("sku", "sku_id", "código", "codigo"))
+            if imported:
+                st.success(f"📥 {len(imported)} SKU(s) lidos do ficheiro.")
+                sq_raw = (sq_raw + "\n" + " ".join(imported)).strip()
+
+        sku_list = _parse_codes(sq_raw, min_len=3)
+        if sq_raw and not sku_list:
+            st.caption("Insere pelo menos um SKU.")
+        elif sku_list:
+            with st.spinner(f"A pesquisar {len(sku_list)} SKU(s)..."):
+                idx = load_index()
+                results = {s: idx.get(s) for s in sku_list}
+
+            found     = {k: v for k, v in results.items() if v}
+            not_found = [k for k, v in results.items() if not v]
+
+            cstat1, cstat2 = st.columns(2)
+            cstat1.metric("✅ Encontrados", len(found))
+            cstat2.metric("❌ Não encontrados", len(not_found))
+
+            if found:
+                _render_product_table(list(found.values()))
+                st.markdown("---")
+                _export_buttons([_row_for_export(r) for r in found.values()], key_prefix="sku")
+                _add_to_basket_button(found, key_prefix="sku")
+
+            if not_found:
+                with st.expander(f"❌ SKUs não encontrados ({len(not_found)})", expanded=False):
+                    st.code("\n".join(not_found))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
