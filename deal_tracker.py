@@ -556,24 +556,65 @@ def get_executive_dashboard_data(
     gross_margin_value  = round(total_revenue * avg_margin / 100, 2)
     our_cut             = round(gross_margin_value * BP_OUR_CUT_PCT, 2)  # legado
 
-    # Proveito calculado pela estrutura de comissões real (margem real × taxa escalão)
-    # NOTA: nesta fase Supabase, total_revenue é do período seleccionado (não do ano contratual).
-    # O bloco de enriquecimento BoxMovers (abaixo) substitui estes valores pelos correctos.
-    commission_rate_pct = bp_commission_rate(total_revenue)
+    # ── Comissões por Ano Contratual (Abr→Mar) ───────────────────────────────
+    # Funciona em cloud (Supabase) e local (BoxMovers Excel).
+    # O bloco de enriquecimento BoxMovers (abaixo) sobrepõe estes valores quando
+    # o ficheiro Excel estiver disponível (mais preciso que os dados Supabase).
+
+    # Anos contratuais encerrados — valores auditados, imutáveis
+    _CY_CLOSED: dict[int, float] = {
+        2025: 12_635_206.0,   # Ano Contratual 1 (Abr'25→Mar'26)
+    }
+
+    def _cy_of_str(dt: str) -> int:
+        """Ano-base do ano contratual para 'YYYY-MM'."""
+        y, m = int(dt[:4]), int(dt[5:7])
+        return y if m >= 4 else y - 1
+
+    # T/O do período por ano contratual (dados Supabase do período filtrado)
+    _period_cy_to: dict[int, float] = {}
+    for _r in revenue_rows:
+        _dt = str(_r.get("created_at", ""))[:7]
+        if len(_dt) == 7:
+            _cy = _cy_of_str(_dt)
+            _period_cy_to[_cy] = _period_cy_to.get(_cy, 0) + _val(_r)
+
+    # Substituir por valores auditados quando os dados do período estão incompletos
+    # (cloud sem ficheiro 2025, ou período filtrado que não inclui o ano completo)
+    _cy_to_final: dict[int, float] = dict(_period_cy_to)
+    for _cy_k, _cy_v in _CY_CLOSED.items():
+        if _cy_to_final.get(_cy_k, 0.0) < _cy_v:
+            _cy_to_final[_cy_k] = _cy_v
+
+    # Taxa por ano contratual
+    _cy_rate_map: dict[int, float] = {
+        _cy: bp_commission_rate(_tot) for _cy, _tot in _cy_to_final.items()
+    }
+
+    # Ano contratual mais recente do período (para o KPI de resumo)
+    _latest_dt = max(
+        (str(_r.get("created_at", ""))[:7] for _r in revenue_rows
+         if len(str(_r.get("created_at", ""))[:7]) == 7),
+        default=""
+    )
+    _cy_latest_num = _cy_of_str(_latest_dt) if _latest_dt else 0
+    commission_rate_pct = _cy_rate_map.get(_cy_latest_num, 0.175)
     our_cut_commission  = round(gross_margin_value * commission_rate_pct, 2)
-    tier_name           = bp_commission_tier_name(total_revenue)
+    tier_name           = bp_commission_tier_name(_cy_to_final.get(_cy_latest_num, 0))
 
-    # Campos do ano contratual (preenchidos correctamente pelo BoxMovers enrichment)
-    cy_current_num   = 0
-    cy_current_to    = total_revenue   # fallback: usar T/O do período como proxy
-    cy_current_label = "—"
-    retroativo       = 0.0
+    cy_current_num   = max(0, _cy_latest_num - 2024)
+    cy_current_to    = _cy_to_final.get(_cy_latest_num, total_revenue)
+    cy_current_label = (
+        f"Ano Contratual {cy_current_num} "
+        f"(Abr'{str(_cy_latest_num)[2:]} → Mar'{str(_cy_latest_num + 1)[2:]})"
+        if _cy_latest_num else "—"
+    )
+    retroativo = 0.0  # recalculado abaixo após o loop mensal
 
-    # Próximo escalão — sobre T/O do ano contratual actual (corrigido pelo BoxMovers enrichment)
     from config import BP_COMMISSION_TIERS
     _next_threshold = None
     for _tmin, _tmax, _extra in BP_COMMISSION_TIERS:
-        if total_revenue < _tmin:
+        if cy_current_to < _tmin:
             _next_threshold = _tmin
             break
 
@@ -626,23 +667,31 @@ def get_executive_dashboard_data(
         })
     sp_list.sort(key=lambda x: -x["revenue"])
 
-    # ── Monthly revenue + margem WRT real + proveito (estrutura comissões real) ──
+    # ── Monthly revenue + margem WRT real + proveito (taxa por ano contratual) ──
     monthly:          dict = {}
     monthly_margin:   dict = {}   # margem bruta real por deal (margin_pct do deal)
-    monthly_proveito: dict = {}   # margem real × taxa_comissão(escalão anual) — retroativo
+    monthly_proveito: dict = {}   # margem real × taxa_comissão(ano contratual do mês)
     for r in revenue_rows:
         dt_str = str(r.get("created_at",""))[:7]  # "YYYY-MM"
         if dt_str and len(dt_str) == 7:
-            v      = _val(r)
-            mg_pct = _parse_margin(r.get("margin_pct"))                  # margem real %
-            mg_val = round(v * mg_pct / 100, 2)                          # margem real €
-            prov   = round(mg_val * commission_rate_pct, 2)              # proveito TSVR Partners
+            v        = _val(r)
+            mg_pct   = _parse_margin(r.get("margin_pct"))
+            mg_val   = round(v * mg_pct / 100, 2)
+            _r_rate  = _cy_rate_map.get(_cy_of_str(dt_str), 0.175)   # taxa do CY deste mês
+            prov     = round(mg_val * _r_rate, 2)
             monthly[dt_str]          = round(monthly.get(dt_str, 0.0)          + v,      2)
             monthly_margin[dt_str]   = round(monthly_margin.get(dt_str, 0.0)   + mg_val, 2)
             monthly_proveito[dt_str] = round(monthly_proveito.get(dt_str, 0.0) + prov,   2)
     monthly_sorted          = dict(sorted(monthly.items()))
     monthly_margin_sorted   = dict(sorted(monthly_margin.items()))
     monthly_proveito_sorted = dict(sorted(monthly_proveito.items()))
+
+    # Retroativo: extra acima da taxa base (17,5%) para os meses com acelerador
+    retroativo = round(sum(
+        monthly_margin.get(k, 0) * (_cy_rate_map.get(_cy_of_str(k), 0.175) - 0.175)
+        for k in monthly_margin
+    ), 2)
+    our_cut_commission = round(sum(monthly_proveito.values()), 2)
 
     # Margem % por mês (para gráfico) — protegido contra divisão por zero
     monthly_margin_pct_sorted = {
