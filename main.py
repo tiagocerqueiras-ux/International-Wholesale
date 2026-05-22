@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
 Cotação Agent — CLI de gestão de deals e cotações
-BoxMovers Export | Worten
+TSVR Partners | Worten B2B Export
 
 Uso:
   py main.py              — Menu interativo
@@ -443,7 +443,7 @@ def interactive_menu():
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Cotação Agent — BoxMovers Export | Worten",
+        description="Cotação Agent — TSVR Partners | Worten B2B Export",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="\n".join(f"  {k:<10} — {v[1]}" for k, v in COMMANDS.items()),
     )
@@ -454,7 +454,7 @@ def main():
     args = parser.parse_args()
 
     print("=" * 62)
-    print("  Cotação Agent — BoxMovers Export | Worten")
+    print("  Cotação Agent — TSVR Partners | Worten B2B Export")
     print("=" * 62)
 
     if args.command and args.command in COMMANDS:

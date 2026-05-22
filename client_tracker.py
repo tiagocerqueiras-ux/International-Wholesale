@@ -1,7 +1,7 @@
 """
 Client Tracker — Supabase CRM
 ==============================
-Gestão centralizada de clientes B2B para BoxMovers Export.
+Gestão centralizada de clientes B2B para TSVR Partners Export.
 """
 
 from datetime import datetime

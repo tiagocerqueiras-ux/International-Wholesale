@@ -1,7 +1,7 @@
 """
 Supplier Tracker — Supabase CRM Fornecedores
 ============================================
-Gestão centralizada de fornecedores/marcas para BoxMovers Export.
+Gestão centralizada de fornecedores/marcas para TSVR Partners Export.
 """
 
 from datetime import datetime

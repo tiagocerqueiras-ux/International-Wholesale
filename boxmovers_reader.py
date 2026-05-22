@@ -43,7 +43,7 @@ _DI_CAT_DESC = 2    # C — Categoria Desc
 _DI_BRAND    = 8    # I — MARCA
 
 # ── Status que representam vendas concluídas ──────────────────────────────────
-_CONCLUDED_NORM = {"CONCLUIDO"}   # comparação após normalizar Í→I
+_CONCLUDED_NORM = {"CONCLUIDO", "PO"}   # comparação após normalizar Í→I
 
 # ── Meses portugueses ─────────────────────────────────────────────────────────
 _PT_MONTHS = {
@@ -381,20 +381,76 @@ def get_bm_dashboard_data(year: int | None = None) -> dict:
     monthly_mg_sorted = dict(sorted(monthly_mg.items()))
     monthly_mgp_sorted = dict(sorted(monthly_mg_pct.items()))
 
-    # ── Proveito estimado (margem × taxa comissão) ────────────────────────────
+    # ── Proveito — taxa por ano contratual (Abr→Mar, início Abril 2025) ─────────
+    # Cada mês pertence a um ano contratual. A taxa final desse ano aplica-se
+    # retroativamente a TODOS os seus meses (contrato em vigor desde Abr'25).
     try:
         from config import bp_commission_rate, bp_commission_tier_name
-        commission_rate = bp_commission_rate(total_rev)
-        tier_name       = bp_commission_tier_name(total_rev)
-    except Exception:
-        commission_rate = 0.175
-        tier_name       = "Base"
 
-    our_cut = round(total_mg * commission_rate, 0)
-    monthly_proveito = {
-        k: round(monthly_mg.get(k, 0) * commission_rate, 2)
-        for k in monthly_sorted
-    }
+        def _cy_of(yr: int, mo: int) -> int:
+            """Ano-base do ano contratual: mo>=4 → yr, mo<4 → yr-1."""
+            return yr if mo >= 4 else yr - 1
+
+        # Ler TODOS os dados (ambos os ficheiros) para calcular T/O por ano contratual
+        _all_concluded = [r for r in read_bm_deals(year_filter=None) if r["concluded"]]
+
+        # T/O acumulado por ano contratual (usando todos os dados disponíveis)
+        _cy_to: dict[int, float] = {}
+        for r in _all_concluded:
+            if r["revenue"] > 0:
+                cy = _cy_of(r["year"], r["month"])
+                _cy_to[cy] = _cy_to.get(cy, 0) + r["revenue"]
+
+        # Taxa final por ano contratual
+        _cy_rate: dict[int, float] = {cy: bp_commission_rate(tot) for cy, tot in _cy_to.items()}
+
+        # Proveito mensal usando a taxa do ano contratual correcto de cada mês
+        monthly_proveito = {}
+        for k, mg_val in monthly_mg.items():
+            yr2, mo2 = int(k[:4]), int(k[5:7])
+            rate = _cy_rate.get(_cy_of(yr2, mo2), 0.175)
+            monthly_proveito[k] = round(mg_val * rate, 2)
+
+        our_cut = round(sum(monthly_proveito.values()), 0)
+
+        # Taxa e escalão do ano contratual mais recente nos dados exibidos
+        _latest = max(monthly_rev.keys()) if monthly_rev else None
+        if _latest:
+            _lyr, _lmo  = int(_latest[:4]), int(_latest[5:7])
+            _cy_latest   = _cy_of(_lyr, _lmo)
+            commission_rate   = _cy_rate.get(_cy_latest, 0.175)
+            tier_name         = bp_commission_tier_name(_cy_to.get(_cy_latest, 0))
+            cy_current_num    = _cy_latest - 2024          # Ano 1, Ano 2, ...
+            cy_current_to     = _cy_to.get(_cy_latest, 0)  # T/O acumulado do ano contratual actual
+            cy_current_label  = (f"Ano Contratual {cy_current_num}"
+                                 f" (Abr'{str(_cy_latest)[2:]} → Mar'{str(_cy_latest+1)[2:]})")
+        else:
+            commission_rate   = 0.175
+            tier_name         = "⚪ Base 17,5%"
+            cy_current_num    = 0
+            cy_current_to     = 0.0
+            cy_current_label  = "—"
+
+        # Retroativo: soma do extra (taxa_cy - base 17,5%) sobre TODOS os meses exibidos
+        retroativo = round(
+            sum(
+                monthly_mg.get(k, 0) * (_cy_rate.get(_cy_of(int(k[:4]), int(k[5:7])), 0.175) - 0.175)
+                for k in monthly_mg
+            ), 2
+        )
+
+    except Exception:
+        commission_rate   = 0.175
+        tier_name         = "Base"
+        our_cut           = round(total_mg * commission_rate, 0)
+        monthly_proveito  = {
+            k: round(monthly_mg.get(k, 0) * commission_rate, 2)
+            for k in monthly_sorted
+        }
+        cy_current_num   = 0
+        cy_current_to    = 0.0
+        cy_current_label = "—"
+        retroativo       = 0.0
 
     # ── Distribuição por categoria ────────────────────────────────────────────
     cat_rev: dict[str, float] = {}
@@ -409,6 +465,11 @@ def get_bm_dashboard_data(year: int | None = None) -> dict:
         "our_cut":             our_cut,
         "commission_rate_pct": round(commission_rate * 100, 1),
         "tier_name":           tier_name,
+        # Contexto do ano contratual (Abr→Mar)
+        "cy_current_num":      cy_current_num,    # 1, 2, 3, ...
+        "cy_current_to":       round(cy_current_to, 2),   # T/O acumulado do ano contratual actual
+        "cy_current_label":    cy_current_label,  # ex: "Ano Contratual 2 (Abr'26 → Mar'27)"
+        "retroativo":          retroativo,         # delta comissão vs base 17,5%
         # Drivers de crescimento
         "top_client":          top_client,
         "top_client_rev":      top_client_rev,

@@ -1,10 +1,10 @@
 """
-Daily Business Briefing — BoxMovers / TDC
-==========================================
+Daily Business Briefing — TSVR Partners / TDC
+==============================================
 Executa diariamente (via Windows Task Scheduler).
 
 O que faz:
-  1. Lê deals activos (PO) do BoxMovers Excel
+  1. Lê deals activos (PO) do SISO Excel
   2. Lê pipeline do Supabase (cotacao_agent)
   3. Analisa tendências de procura por categoria/marca
   4. Pede ao Claude que gere:
@@ -168,7 +168,7 @@ def _get_supabase_pipeline() -> dict:
 # 2. Geração do briefing com Claude
 # ─────────────────────────────────────────────────────────────────────────────
 
-_SYSTEM_PROMPT = """És o assistente comercial de Tiago Cerqueira, Export Manager B2B da Worten (BoxMovers / TDC).
+_SYSTEM_PROMPT = """És o assistente comercial de Tiago Cerqueira, Export Manager B2B da Worten (TSVR Partners / TDC).
 Tens acesso a dados reais de deals, pipeline e histórico de vendas.
 
 CRÍTICO: Responde EXCLUSIVAMENTE com HTML válido. NUNCA uses Markdown.
@@ -274,7 +274,7 @@ _EMAIL_WRAPPER = """
     {body}
   </div>
   <p style="font-size:11px;color:#aaa;text-align:center;margin-top:10px;">
-    Gerado por BoxMovers AI · responde a este email para feedback
+    Gerado por TSVR Partners AI · responde a este email para feedback
   </p>
 </body></html>"""
 
@@ -293,7 +293,7 @@ def _send_email(subject: str, html_body: str) -> bool:
         )
 
         params = {
-            "from":     f"BoxMovers AI <{SENDER_EMAIL}>",
+            "from":     f"TSVR Partners AI <{SENDER_EMAIL}>",
             "to":       [RECIPIENT_EMAIL],
             "subject":  subject,
             "html":     full_html,
@@ -338,7 +338,7 @@ def main():
 
     # 3. Enviar
     day_names_pt = {0:"Segunda",1:"Terça",2:"Quarta",3:"Quinta",4:"Sexta"}
-    subject = f"[BoxMovers] Briefing {day_names_pt.get(weekday,'')} {today.strftime('%d/%m')} — {bm_data.get('n_po_clients',0)} PO activos · €{bm_data.get('total_po_value',0):,.0f}"
+    subject = f"[TSVR Partners] Briefing {day_names_pt.get(weekday,'')} {today.strftime('%d/%m')} — {bm_data.get('n_po_clients',0)} PO activos · €{bm_data.get('total_po_value',0):,.0f}"
 
     sent = _send_email(subject, html_content)
     if not sent:

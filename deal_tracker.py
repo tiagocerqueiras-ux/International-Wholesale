@@ -557,11 +557,19 @@ def get_executive_dashboard_data(
     our_cut             = round(gross_margin_value * BP_OUR_CUT_PCT, 2)  # legado
 
     # Proveito calculado pela estrutura de comissões real (margem real × taxa escalão)
+    # NOTA: nesta fase Supabase, total_revenue é do período seleccionado (não do ano contratual).
+    # O bloco de enriquecimento BoxMovers (abaixo) substitui estes valores pelos correctos.
     commission_rate_pct = bp_commission_rate(total_revenue)
     our_cut_commission  = round(gross_margin_value * commission_rate_pct, 2)
     tier_name           = bp_commission_tier_name(total_revenue)
 
-    # Próximo escalão (para indicador de progresso)
+    # Campos do ano contratual (preenchidos correctamente pelo BoxMovers enrichment)
+    cy_current_num   = 0
+    cy_current_to    = total_revenue   # fallback: usar T/O do período como proxy
+    cy_current_label = "—"
+    retroativo       = 0.0
+
+    # Próximo escalão — sobre T/O do ano contratual actual (corrigido pelo BoxMovers enrichment)
     from config import BP_COMMISSION_TIERS
     _next_threshold = None
     for _tmin, _tmax, _extra in BP_COMMISSION_TIERS:
@@ -628,7 +636,7 @@ def get_executive_dashboard_data(
             v      = _val(r)
             mg_pct = _parse_margin(r.get("margin_pct"))                  # margem real %
             mg_val = round(v * mg_pct / 100, 2)                          # margem real €
-            prov   = round(mg_val * commission_rate_pct, 2)              # proveito BoxMovers
+            prov   = round(mg_val * commission_rate_pct, 2)              # proveito TSVR Partners
             monthly[dt_str]          = round(monthly.get(dt_str, 0.0)          + v,      2)
             monthly_margin[dt_str]   = round(monthly_margin.get(dt_str, 0.0)   + mg_val, 2)
             monthly_proveito[dt_str] = round(monthly_proveito.get(dt_str, 0.0) + prov,   2)
@@ -728,14 +736,25 @@ def get_executive_dashboard_data(
             mix_abrand         = _bm["mix_abrand"]
             avg_ticket         = _bm["avg_ticket"]
             # Gráfico mensal real
-            monthly_sorted          = _bm["monthly_revenue"]
-            monthly_margin_sorted   = _bm["monthly_margin"]
+            monthly_sorted            = _bm["monthly_revenue"]
+            monthly_margin_sorted     = _bm["monthly_margin"]
             monthly_margin_pct_sorted = _bm["monthly_margin_pct"]
-            monthly_proveito_sorted = _bm["monthly_proveito"]
-            # Comissão recalculada sobre receita real
-            commission_rate_pct     = _bm["commission_rate_pct"] / 100
-            tier_name               = _bm["tier_name"]
-            our_cut_commission      = _bm["our_cut"]
+            monthly_proveito_sorted   = _bm["monthly_proveito"]
+            # Comissão recalculada por ano contratual (correcta)
+            commission_rate_pct  = _bm["commission_rate_pct"] / 100
+            tier_name            = _bm["tier_name"]
+            our_cut_commission   = _bm["our_cut"]
+            # Contexto do ano contratual
+            cy_current_num   = _bm.get("cy_current_num",  0)
+            cy_current_to    = _bm.get("cy_current_to",   0.0)
+            cy_current_label = _bm.get("cy_current_label", "—")
+            retroativo       = _bm.get("retroativo",       0.0)
+            # Próximo escalão baseado no T/O do ano contratual actual (não do período)
+            _next_threshold = None
+            for _tmin, _tmax, _extra in BP_COMMISSION_TIERS:
+                if cy_current_to < _tmin:
+                    _next_threshold = _tmin
+                    break
     except Exception as _bm_err:
         print(f"[deal_tracker] BoxMovers enrichment indisponível: {_bm_err}")
 
@@ -755,11 +774,15 @@ def get_executive_dashboard_data(
         "monthly_proveito":       monthly_proveito_sorted,
         "monthly_margin_pct":     monthly_margin_pct_sorted,
         "status_counts":          status_counts,
-        # Comissões
+        # Comissões — ano contratual (Abr→Mar)
         "commission_rate_pct":    round(commission_rate_pct * 100, 1),
         "our_cut_commission":     our_cut_commission,
         "tier_name":              tier_name,
         "next_tier_threshold":    _next_threshold,
+        "cy_current_num":         cy_current_num,
+        "cy_current_to":          cy_current_to,
+        "cy_current_label":       cy_current_label,
+        "retroativo":             retroativo,
         # Drivers de crescimento
         "top_client":             top_client,
         "top_client_rev":         top_client_rev,

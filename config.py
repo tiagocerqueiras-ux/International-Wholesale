@@ -231,36 +231,38 @@ BP_TARGET_REVENUE   = 15_000_000   # EUR/ano — faturação alvo
 BP_BREAK_EVEN       = 11_500_000   # EUR/ano — ponto de equilíbrio
 BP_TARGET_EBITDA    =    100_000   # EUR/ano — EBITDA alvo
 BP_TAKE_RATE        =      0.0265  # 2,65% sobre faturação = nossa parte
-BP_OUR_CUT_PCT      =       0.30   # 30% da margem bruta = proveito BoxMovers (legado)
+BP_OUR_CUT_PCT      =       0.30   # 30% da margem bruta = proveito TSVR Partners (legado BP)
 BP_FIXED_COSTS      =    306_000   # EUR/ano — pessoal fixo (2 colabs + 2 contractors)
 BP_SCENARIO_BASE    = 20_000_000   # EUR — cenário base
 BP_SCENARIO_OPT     = 30_000_000   # EUR — cenário otimista
 
-# ── Estrutura de Comissões e Aceleradores (Simulador Exportação Worten) ────────
-# Fórmula: Proveito = T/O × BP_MGN_WRT_ESTIM × taxa_comissão(T/O anual)
-BP_MGN_WRT_ESTIM       = 0.030   # 3,0% — margem bruta Worten estimada sobre T/O
-BP_COMMISSION_BASE_PCT = 0.175   # 17,5% — comissão base sobre a margem Worten
+# ── Estrutura de Comissões — Contrato em vigor (início Abril 2025) ─────────────
+# Fórmula: Proveito = MG real × taxa_comissão(T/O acumulado ano contratual)
+# Ano contratual: Abr → Mar  |  Base: 17,5%  |  Máx: 27,5%
+BP_MGN_WRT_ESTIM       = 0.030   # 3,0% — margem bruta Worten estimada (BP)
+BP_COMMISSION_BASE_PCT = 0.175   # 17,5% — comissão base sobre a margem real
 
-# Aceleradores extra sobre T/O TOTAL anual atingido
-# Cada entrada: (to_min_eur, to_max_eur_excl, pct_extra_comissao)
+# Aceleradores sobre T/O acumulado do ano contratual (Abr→Mar)
+# Cada entrada: (to_min_eur, to_max_eur_excl, pct_extra_sobre_base)
 BP_COMMISSION_TIERS = [
-    # (mínimo T/O, máximo T/O excl., % comissão extra)
     (             0,  9_999_999, 0.000),   # Base: 17,5%
-    (10_000_000, 14_999_999, 0.025),       # +2,5% → 20,0%
-    (15_000_000, 19_999_999, 0.050),       # +5,0% → 22,5%
-    (20_000_000, float("inf"), 0.075),     # +7,5% → 25,0%
+    (10_000_000, 14_999_999,    0.025),   # +2,5% → 20,0%
+    (15_000_000, 19_999_999,    0.050),   # +5,0% → 22,5%
+    (20_000_000, 24_999_999,    0.075),   # +7,5% → 25,0%
+    (25_000_000, float("inf"), 0.100),   # +10,0% → 27,5% (máximo contratual)
 ]
 
-# Comissão anual máxima por escalão (referência do BP)
+# Comissão anual estimada por escalão (referência do BP)
 BP_COMMISSION_TIER_CAPS = {
     "base":   52_500,   # < 10M T/O
-    "tier1":  90_000,   # 10M–15M T/O
-    "tier2": 135_000,   # 15M–20M T/O
-    "tier3": 187_500,   # > 20M T/O
+    "tier1":  90_000,   # 10–15M T/O
+    "tier2": 135_000,   # 15–20M T/O
+    "tier3": 168_750,   # 20–25M T/O
+    "tier4": 206_250,   # > 25M T/O
 }
 
 def bp_commission_rate(annual_turnover: float) -> float:
-    """Devolve a taxa total de comissão (base + acelerador) para o T/O anual dado."""
+    """Devolve a taxa total de comissão (base + acelerador) para o T/O do ano contratual."""
     extra = 0.0
     for to_min, to_max, pct_extra in BP_COMMISSION_TIERS:
         if annual_turnover >= to_min:
@@ -268,12 +270,13 @@ def bp_commission_rate(annual_turnover: float) -> float:
     return BP_COMMISSION_BASE_PCT + extra
 
 def bp_proveito(annual_turnover: float) -> float:
-    """Calcula o proveito BoxMovers total: T/O × 3% margem WRT × taxa_comissão."""
+    """Calcula o proveito TSVR Partners estimado: T/O × 3% margem WRT × taxa_comissão."""
     return annual_turnover * BP_MGN_WRT_ESTIM * bp_commission_rate(annual_turnover)
 
 def bp_commission_tier_name(annual_turnover: float) -> str:
-    """Devolve o nome do escalão activo."""
-    if annual_turnover >= 20_000_000: return "Acelerador +7,5%  (>20M)"
-    if annual_turnover >= 15_000_000: return "Acelerador +5,0%  (15M–20M)"
-    if annual_turnover >= 10_000_000: return "Acelerador +2,5%  (10M–15M)"
-    return "Base Permanente  (<10M)"
+    """Devolve o nome do escalão activo para o T/O dado."""
+    if annual_turnover >= 25_000_000: return "🟣 Acel +10,0% → 27,5%  (>25M)"
+    if annual_turnover >= 20_000_000: return "🔴 Acel  +7,5% → 25,0%  (20–25M)"
+    if annual_turnover >= 15_000_000: return "🟠 Acel  +5,0% → 22,5%  (15–20M)"
+    if annual_turnover >= 10_000_000: return "🟡 Acel  +2,5% → 20,0%  (10–15M)"
+    return "⚪ Base 17,5%  (<10M)"

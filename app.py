@@ -1,6 +1,6 @@
 """
 Cotação Agent — Interface Web (Streamlit)
-BoxMovers Export | Worten
+TSVR Partners | Worten B2B Export
 """
 
 import re
@@ -1184,10 +1184,12 @@ elif page == "📊  Dashboard":
     _our_cut          = _dash.get("our_cut_commission", _dash.get("our_cut", 0))
     _ebitda_est       = _our_cut - BP_FIXED_COSTS
     _win_rate         = _dash.get("win_rate", 0)
-    _take_rate        = round(_our_cut / _rev * 100, 2) if _rev > 0 else 0.0
     _commission_rate  = _dash.get("commission_rate_pct", 0)
     _tier_name        = _dash.get("tier_name", "—")
     _next_threshold   = _dash.get("next_tier_threshold")
+    _cy_label         = _dash.get("cy_current_label", "—")
+    _cy_to            = _dash.get("cy_current_to", 0.0)
+    _retroativo       = _dash.get("retroativo", 0.0)
     _monthly          = _dash.get("monthly_revenue",    {})
     _monthly_margin   = _dash.get("monthly_margin",     {})
     _monthly_proveito = _dash.get("monthly_proveito",   {})
@@ -1239,7 +1241,7 @@ elif page == "📊  Dashboard":
         _kpi_card("Margem %", f"{_margin:.1f}%",
                   _delta_html(_mom_mgpct, pp=True))
     with _c4:
-        _kpi_card("Proveito Box Movers", _fmt_eur(_our_cut),
+        _kpi_card("Proveito TSVR Partners", _fmt_eur(_our_cut),
                   _delta_html(_mom_prov, "%"))
 
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
@@ -1303,7 +1305,7 @@ elif page == "📊  Dashboard":
 
     with _mid_right:
         st.markdown('<div class="db-card" style="height:100%">', unsafe_allow_html=True)
-        st.markdown('<p class="db-sec-title">Proveito Box Movers</p>', unsafe_allow_html=True)
+        st.markdown('<p class="db-sec-title">Proveito TSVR Partners</p>', unsafe_allow_html=True)
 
         if _monthly_proveito:
             _sorted_prov  = sorted(_monthly_proveito.items())
@@ -1347,7 +1349,7 @@ elif page == "📊  Dashboard":
     # ════════════════════════════════════════════════════════════════════════
     # Box Movers Trend + Decomposition
     # ════════════════════════════════════════════════════════════════════════
-    with st.expander("📊 Box Movers Trend + Decomposition", expanded=True):
+    with st.expander("📊 TSVR Partners Trend + Decomposition", expanded=True):
         _bm_left, _bm_right = st.columns([3, 2], gap="medium")
 
         with _bm_left:
@@ -1400,10 +1402,13 @@ elif page == "📊  Dashboard":
             # P&L decomposition
             st.markdown("**P&L Decomposition**")
             _be_pct2 = round(_rev / BP_BREAK_EVEN * 100, 1) if BP_BREAK_EVEN else 0
+            _cy_note = f"{_tier_name} · {_cy_label}" if _cy_label != "—" else _tier_name
+            _retro_note = (f"Retroativo: +{_fmt_eur(_retroativo)}" if _retroativo > 0.5
+                           else "Taxa base — escalão não atingido")
             _pl_items = [
                 ("Faturação",      _fmt_eur(_rev),      f"Alvo {BP_TARGET_REVENUE/1e6:.0f}M €"),
                 (f"Margem ({_margin:.1f}%)", _fmt_eur(_gm_val), "Margem real ponderada"),
-                (f"Comissão {_commission_rate:.1f}%", _fmt_eur(_our_cut), _tier_name),
+                (f"Comissão {_commission_rate:.1f}%", _fmt_eur(_our_cut), _cy_note),
                 ("Custos Fixos",   f"-{_fmt_eur(BP_FIXED_COSTS)}", "2 colabs + 2 contractors"),
                 ("EBITDA",         _fmt_eur(_ebitda_est), f"Alvo {BP_TARGET_EBITDA/1e3:.0f}k €"),
             ]
@@ -1413,36 +1418,55 @@ elif page == "📊  Dashboard":
                 _col_b.markdown(f"<span style='font-size:13px;font-weight:600;color:#111827'>{_pi_val}</span>", unsafe_allow_html=True)
                 st.caption(_pi_note)
 
+            # Retroativo a cobrar (se aplicável)
+            if _retroativo > 0.5:
+                st.markdown(
+                    f"<div style='background:#FFF4E6;border-left:3px solid #CC0000;"
+                    f"padding:8px 12px;border-radius:4px;margin-top:4px;font-size:12px'>"
+                    f"🔴 <b>Retroativo a cobrar à Worten:</b> +{_fmt_eur(_retroativo)}<br>"
+                    f"<span style='color:#666'>{_retro_note}</span></div>",
+                    unsafe_allow_html=True
+                )
+
             st.divider()
-            _be_prog = min(_rev / BP_BREAK_EVEN, 1.0) if BP_BREAK_EVEN else 0
-            st.progress(_be_prog, text=f"Break-even {_be_pct2:.0f}% ({_fmt_eur(BP_BREAK_EVEN)})")
-            _tgt_prog = min(_rev / BP_TARGET_REVENUE, 1.0) if BP_TARGET_REVENUE else 0
-            _rev_pct2 = round(_rev / BP_TARGET_REVENUE * 100, 1) if BP_TARGET_REVENUE else 0
-            st.progress(_tgt_prog, text=f"Alvo {_rev_pct2:.0f}% ({_fmt_eur(BP_TARGET_REVENUE)})")
+            # Progress bars baseados no T/O do ano contratual actual
+            _cy_pct = round(_cy_to / BP_TARGET_REVENUE * 100, 1) if BP_TARGET_REVENUE else 0
+            _cy_prog = min(_cy_to / BP_TARGET_REVENUE, 1.0) if BP_TARGET_REVENUE else 0
+            st.progress(_cy_prog, text=f"T/O {_cy_label[:20]}… {_cy_pct:.0f}% do alvo ({_fmt_eur(BP_TARGET_REVENUE)})" if _cy_label != "—" else f"T/O {_cy_pct:.0f}% do alvo")
+            _be_prog = min(_cy_to / BP_BREAK_EVEN, 1.0) if BP_BREAK_EVEN else 0
+            st.progress(_be_prog, text=f"Break-even {round(_cy_to/BP_BREAK_EVEN*100,1) if BP_BREAK_EVEN else 0:.0f}% ({_fmt_eur(BP_BREAK_EVEN)})")
 
             if _next_threshold:
-                _gap2 = _next_threshold - _rev
+                _gap2 = _next_threshold - _cy_to
                 st.info(f"⚡ Faltam **{_fmt_eur(_gap2)}** para próximo acelerador  "
-                        f"(→ {_next_threshold/1e6:.0f}M)", icon="🚀")
+                        f"(→ {_next_threshold/1e6:.0f}M T/O no ano contratual)", icon="🚀")
 
     # ── Tabela mensal detalhada (collapsible) ─────────────────────────────────
     with st.expander("📋 Detalhe Mensal + Projecções"):
         if _monthly:
             _cum_total = _cum_mg = _cum_prov = 0.0
             _cum_rows  = []
+            _mn_abbr   = {"01":"Jan","02":"Fev","03":"Mar","04":"Abr","05":"Mai","06":"Jun",
+                          "07":"Jul","08":"Ago","09":"Set","10":"Out","11":"Nov","12":"Dez"}
             for _mk in sorted(_monthly.keys()):
-                _mv   = _monthly.get(_mk, 0.0)
-                _mgv  = _monthly_margin.get(_mk, 0.0)
-                _prov = _monthly_proveito.get(_mk, 0.0)
+                _mv    = _monthly.get(_mk, 0.0)
+                _mgv   = _monthly_margin.get(_mk, 0.0)
+                _prov  = _monthly_proveito.get(_mk, 0.0)
                 _cum_total += _mv
                 _cum_mg    += _mgv
                 _cum_prov  += _prov
                 _mg_pct_m  = _mgv / _mv * 100 if _mv else 0.0
+                _tx_m      = _prov / _mgv * 100 if _mgv else 0.0
+                _yr_m, _mo_m = int(_mk[:4]), int(_mk[5:7])
+                _cy_m  = _yr_m if _mo_m >= 4 else _yr_m - 1
+                _lbl_m = f"{_mn_abbr.get(_mk[5:7], _mk[5:7])}'{_mk[2:4]}"
                 _cum_rows.append({
-                    "Mês":                _mk,
+                    "Mês":                _lbl_m,
+                    "Ano Contratual":     f"Ano {_cy_m - 2024}",
                     "Faturação (€)":      f"{_mv:,.0f}",
                     "Margem Bruta (€)":   f"{_mgv:,.0f}",
                     "Margem %":           f"{_mg_pct_m:.1f}%",
+                    "Taxa Comissão":      f"{_tx_m:.1f}%",
                     "Proveito BM (€)":    f"{_prov:,.0f}",
                     "Acumulado Fat. (€)": f"{_cum_total:,.0f}",
                     "% Alvo Anual":       f"{_cum_total / BP_TARGET_REVENUE * 100:.1f}%",
