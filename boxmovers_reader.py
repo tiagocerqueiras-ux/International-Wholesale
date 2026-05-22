@@ -223,6 +223,48 @@ def _is_concluded(status: str) -> bool:
 # API pública
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _read_bm_deals_snapshot(year_filter: int | None = None) -> list[dict]:
+    """
+    Fallback: lê o snapshot JSON commitado no repo (usado no Railway/cloud
+    onde os ficheiros .lnk do Windows não são resolúveis).
+    """
+    import json as _json
+    snap = Path(__file__).parent / "data" / "bm_deals_snapshot.json"
+    if not snap.exists():
+        return []
+    try:
+        with open(snap, encoding="utf-8") as f:
+            rows = _json.load(f)
+        # Garantir que todos os campos necessários existem
+        result = []
+        for r in rows:
+            yr = r.get("year", 0)
+            if year_filter and yr != year_filter:
+                continue
+            status = r.get("status", "")
+            status_norm = (status.upper()
+                           .replace("Í", "I").replace("Ó", "O")
+                           .replace("Â", "A").replace("Ã", "A")
+                           .replace("Ú", "U").replace("É", "E"))
+            result.append({
+                "client":    r.get("client", "—"),
+                "brand":     r.get("brand", "—"),
+                "cat":       r.get("cat", "—"),
+                "sku":       "",
+                "revenue":   float(r.get("revenue", 0)),
+                "mg_eur":    float(r.get("mg_eur", 0)),
+                "mg_pct":    float(r.get("mg_pct", 0)),
+                "year":      yr,
+                "month":     r.get("month", 0),
+                "status":    status,
+                "bm_year":   yr,
+                "concluded": status_norm in _CONCLUDED_NORM,
+            })
+        return result
+    except Exception:
+        return []
+
+
 def read_bm_deals(year_filter: int | None = None) -> list[dict]:
     """
     Lê todas as linhas de deal dos ficheiros BoxMovers (2025 e/ou 2026).
@@ -239,11 +281,12 @@ def read_bm_deals(year_filter: int | None = None) -> list[dict]:
     try:
         import openpyxl  # noqa: F401
     except ImportError:
-        return []
+        return _read_bm_deals_snapshot(year_filter)
 
     paths = _get_bm_paths()
     if not paths:
-        return []
+        # Excel indisponível (Railway/cloud) — usar snapshot JSON
+        return _read_bm_deals_snapshot(year_filter)
 
     all_rows: list[dict] = []
 
