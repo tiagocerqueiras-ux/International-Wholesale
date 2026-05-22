@@ -401,6 +401,25 @@ def get_bm_dashboard_data(year: int | None = None) -> dict:
                 cy = _cy_of(r["year"], r["month"])
                 _cy_to[cy] = _cy_to.get(cy, 0) + r["revenue"]
 
+        # Fallback para ambientes cloud (Railway) onde o ficheiro 2025 não existe:
+        # Se o T/O do CY1 (Abr'25→Mar'26) calculado parece incompleto (abaixo do
+        # valor real conhecido), usa o valor passado por variável de ambiente.
+        # Definir no Railway: BM_CY_KNOWN=2025:12635206
+        import os as _os
+        _cy_known_str = _os.environ.get("BM_CY_KNOWN", "")
+        for _cy_part in _cy_known_str.split(","):
+            _cy_part = _cy_part.strip()
+            if ":" in _cy_part:
+                _cy_k, _cy_v = _cy_part.split(":", 1)
+                try:
+                    _cy_k_int = int(_cy_k.strip())
+                    _cy_v_flt = float(_cy_v.strip())
+                    # Só substitui se o valor real for maior (dados parciais no cloud)
+                    if _cy_to.get(_cy_k_int, 0) < _cy_v_flt:
+                        _cy_to[_cy_k_int] = _cy_v_flt
+                except ValueError:
+                    pass
+
         # Taxa final por ano contratual
         _cy_rate: dict[int, float] = {cy: bp_commission_rate(tot) for cy, tot in _cy_to.items()}
 
