@@ -73,8 +73,11 @@ ADMIN_EMAIL  = _get_secret("ADMIN_EMAIL",  "")
 BASE_DIR  = Path(__file__).parent.parent
 DEALS_FILE = BASE_DIR / "Deals_Tracking.xlsx"   # fallback local
 
-# Simulador — só necessário para rebuild do cache local
-_SHORTCUT = BASE_DIR / "Docs" / "Simulador_AfricanMarkets - Atalho.lnk"
+# Simulador — usado apenas no rebuild local da cache de SKUs.
+# Em cloud (Railway) nenhum destes caminhos existe; a app usa o
+# simulator_index.json.gz empacotado no repositório.
+_SIMULATOR_SHORTCUT = BASE_DIR / "Docs" / "Simulador_AfricanMarkets - Atalho.lnk"
+
 
 def _resolve_shortcut(lnk_path: Path) -> Path:
     """Resolve atalho Windows .lnk — só funciona em Windows com pywin32."""
@@ -89,10 +92,38 @@ def _resolve_shortcut(lnk_path: Path) -> Path:
         pass
     return lnk_path
 
-try:
-    SIMULATOR_FILE = _resolve_shortcut(_SHORTCUT)
-except Exception:
-    SIMULATOR_FILE = _SHORTCUT
+
+def _resolve_simulator_file() -> Path:
+    """Localiza o Simulador_AfricanMarkets.xlsx por ordem de prioridade, sem
+    depender do atalho .lnk nem do win32com:
+      1. Override manual via secret/env SIMULATOR_PATH
+      2. Biblioteca SharePoint/OneDrive sincronizada do utilizador
+      3. Cópia local em Docs/
+      4. Atalho .lnk (legado, se existir e win32com disponível)
+    """
+    override = _get_secret("SIMULATOR_PATH", "")
+    if override:
+        return Path(override)
+
+    candidates = [
+        Path.home() / "Worten" / "INC - BI & Analytics - Documents"
+            / "4. B2B" / "6. Franchising" / "Simulador_AfricanMarkets.xlsx",
+        BASE_DIR / "Docs" / "Simulador_AfricanMarkets.xlsx",
+    ]
+    if _SIMULATOR_SHORTCUT.exists():
+        candidates.append(_resolve_shortcut(_SIMULATOR_SHORTCUT))
+
+    for c in candidates:
+        try:
+            if c.exists():
+                return c
+        except Exception:
+            continue
+    # Default documentado (caminho de rede), mesmo que ausente nesta máquina/cloud
+    return candidates[0]
+
+
+SIMULATOR_FILE = _resolve_simulator_file()
 
 CACHE_DIR       = Path(__file__).parent / ".cache"
 SIMULATOR_CACHE = CACHE_DIR / "simulator_index.json"

@@ -232,8 +232,8 @@ def build_cache(simulator_path=None, entity=None, force=False) -> dict:
         print(f"  Cache carregado: {len(_INDEX):,} SKUs          ")
         return _INDEX
 
-    # 2. Supabase Storage (modo cloud)
-    if SUPABASE_URL and SUPABASE_KEY:
+    # 2. Supabase Storage (modo cloud) — ignorado em rebuild forçado (force=True)
+    if SUPABASE_URL and SUPABASE_KEY and not force:
         try:
             print("  A descarregar índice do Supabase Storage...")
             _INDEX = _download_from_supabase()

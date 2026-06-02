@@ -17,6 +17,13 @@ import json
 import gzip
 from pathlib import Path
 
+# Consola Windows (cp1252) não imprime emojis — forçar UTF-8 evita UnicodeEncodeError
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 
 def main():
     force = "--force" in sys.argv
