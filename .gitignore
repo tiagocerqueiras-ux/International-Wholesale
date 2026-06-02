@@ -9,6 +9,9 @@
 !.cache/transport_cache.json
 emails_out/
 
+# Logs
+*.log
+
 # Python
 __pycache__/
 *.pyc
