@@ -250,6 +250,12 @@ PIPELINE_ORDER_STATUSES = [
 ]
 PIPELINE_CLOSED_STATUSES = ["Faturado", "Arquivado", "Perdido"]
 
+# Pipeline do DASHBOARD — estados contabilizados como "pipeline" nos KPIs do
+# dashboard (propostas em aberto a serem trabalhadas). Vendas no dashboard vêm
+# do ficheiro de controlo BoxMovers (Encomenda Confirmada + Faturado), por isso
+# o pipeline aqui exclui rascunhos/pedidos de cotação/follow-ups e encomendas.
+PIPELINE_DASHBOARD_STATUSES = ["Lead", "Enviado", "Em Negociação"]
+
 # Days without update before a deal is flagged as "at risk"
 DEAL_STALE_DAYS = 14
 

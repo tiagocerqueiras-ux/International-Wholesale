@@ -492,7 +492,7 @@ def get_executive_dashboard_data(
       3. (nenhum)             → todos os dados
     Devolve: revenue, pipeline, margin, P&L estimado, por comercial, por mês.
     """
-    from config import (PIPELINE_CLOSED_STATUSES, PIPELINE_ACTIVE_STATUSES,
+    from config import (PIPELINE_CLOSED_STATUSES, PIPELINE_DASHBOARD_STATUSES,
                         BP_OUR_CUT_PCT,
                         bp_commission_rate, bp_commission_tier_name)
 
@@ -531,7 +531,7 @@ def get_executive_dashboard_data(
     faturado_statuses = {"Faturado"}
     closed_win        = {"Faturado"}          # removido "Fechado" — não existe no pipeline actual
     closed_lost       = {"Perdido"}
-    active_statuses   = set(PIPELINE_ACTIVE_STATUSES)
+    active_statuses   = set(PIPELINE_DASHBOARD_STATUSES)  # pipeline = Lead/Enviado/Em Negociação
     order_statuses    = {"Encomenda Confirmada", "Em Preparação", "Expedido", "Entregue"}
     # "Arquivado" pertence a PIPELINE_CLOSED_STATUSES — não conta como revenue
 

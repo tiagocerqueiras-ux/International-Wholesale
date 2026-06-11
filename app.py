@@ -18,6 +18,7 @@ from config import (
     STOCKS_EMAIL, ADMIN_EMAIL,
     MIN_MARGIN_DEFAULT, TARGET_MARGIN_DEFAULT,
     PIPELINE_ACTIVE_STATUSES, PIPELINE_ORDER_STATUSES, PIPELINE_CLOSED_STATUSES,
+    PIPELINE_DASHBOARD_STATUSES,
     DEAL_STALE_DAYS,
     BP_TARGET_REVENUE, BP_BREAK_EVEN, BP_TARGET_EBITDA,
     BP_TAKE_RATE, BP_OUR_CUT_PCT, BP_FIXED_COSTS,
@@ -1542,8 +1543,8 @@ elif page == "📋  Deals em Curso":
         st.divider()
 
         # ── Métricas por grupo ─────────────────────────────────────────────
-        _active_count  = sum(_by_st.get(s, {}).get("count", 0) for s in PIPELINE_ACTIVE_STATUSES)
-        _active_val    = sum(_by_st.get(s, {}).get("value", 0) for s in PIPELINE_ACTIVE_STATUSES)
+        _active_count  = sum(_by_st.get(s, {}).get("count", 0) for s in PIPELINE_DASHBOARD_STATUSES)
+        _active_val    = sum(_by_st.get(s, {}).get("value", 0) for s in PIPELINE_DASHBOARD_STATUSES)
         _order_count   = sum(_by_st.get(s, {}).get("count", 0) for s in PIPELINE_ORDER_STATUSES)
         _order_val     = sum(_by_st.get(s, {}).get("value", 0) for s in PIPELINE_ORDER_STATUSES)
         _closed_count  = _by_st.get("Faturado", {}).get("count", 0)
@@ -1552,7 +1553,7 @@ elif page == "📋  Deals em Curso":
 
         st.subheader("Resumo do Pipeline")
         _pm1, _pm2, _pm3, _pm4 = st.columns(4)
-        _pm1.metric("💼 Negociação Activa", f"{_active_count} deals", f"{_active_val:,.0f} €")
+        _pm1.metric("💼 Pipeline", f"{_active_count} deals", f"{_active_val:,.0f} €")
         _pm2.metric("📦 Em Processamento", f"{_order_count} deals", f"{_order_val:,.0f} €")
         _pm3.metric("🧾 Faturado", f"{_closed_count} deals", f"{_closed_val:,.0f} €")
         _pm4.metric("❌ Perdidos", f"{_lost_count} deals")
