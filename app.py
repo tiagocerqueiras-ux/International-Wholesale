@@ -11,6 +11,7 @@ from datetime import datetime
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent))
+import client_form  # formulário de cliente reutilizável (Fase 1: 13 campos)
 
 from config import (
     STATUSES, STATUS_COLORS,
@@ -31,7 +32,7 @@ from deal_tracker import add_deal, update_status, update_margin, update_deal_pri
 from email_generator import generate_proposal, generate_followup, save_email_html, generate_closing_emails, generate_supplier_request, generate_expedition_confirmation, generate_transport_request
 from email_sender import create_draft, build_subject
 from client_tracker import (
-    add_client, update_client, get_client, get_client_by_email,
+    add_client, update_client, get_client, get_client_by_email, find_client,
     list_clients, count_clients, get_client_deals, bulk_import_clients,
     find_duplicates, upsert_from_deal, sync_clients_from_deals,
     data_quality_report, fix_phone_add_code, fix_all_phones,
@@ -312,6 +313,17 @@ def _show_login():
     return False
 
 
+# ── BYPASS de login em AMBIENTE DE TESTE (auto-entra como owner) ─────────────
+try:
+    from config import TEST_MODE as _TEST_MODE, TBL_DEALS as _TBL_DEALS
+except Exception:
+    _TEST_MODE = False
+    _TBL_DEALS = "deals"
+if _TEST_MODE and not st.session_state.get("current_user"):
+    st.session_state["current_user"] = {
+        "name": "Teste (owner)", "email": "teste@fase1.local", "role": "owner",
+    }
+
 if not _show_login():
     st.stop()
 
@@ -321,6 +333,11 @@ _role = _cu.get("role", "comercial_interno")
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
+    if _TEST_MODE:
+        st.markdown(
+            "<div style='background:#7a1020;color:#fff;text-align:center;padding:6px 8px;"
+            "border-radius:6px;font-weight:700;font-size:12px;margin-bottom:8px'>"
+            "🧪 AMBIENTE DE TESTE</div>", unsafe_allow_html=True)
     st.markdown("""
     <div style="text-align:center; padding:16px 8px 12px 8px; margin-bottom:4px;">
       <div style="display:inline-block; background:linear-gradient(135deg,#1B2744 60%,#C49A3C 100%);
@@ -342,6 +359,14 @@ with st.sidebar:
 
     # Nav filtrado pelo role
     _nav_pages = PAGES_BY_ROLE.get(_role, PAGES_BY_ROLE["comercial_interno"])
+    if _TEST_MODE:
+        _nav_pages = [p for p in _nav_pages if "Administração" not in p]
+    # Adjudicadas faz parte do fluxo Fase 1 — visível em produção e teste,
+    # logo a seguir a "Deals em Curso" para quem tiver essa página.
+    if "📦  Adjudicadas" not in _nav_pages:
+        _dc = next((i for i, p in enumerate(_nav_pages) if "Deals em Curso" in p), None)
+        if _dc is not None:
+            _nav_pages = _nav_pages[:_dc + 1] + ["📦  Adjudicadas"] + _nav_pages[_dc + 1:]
     # Aplica redirect antes do widget ser instanciado (evita StreamlitAPIException)
     if "_nav_redirect" in st.session_state:
         _target = st.session_state.pop("_nav_redirect")
@@ -388,33 +413,83 @@ if page == "🆕  Nova Cotação":
 
     # ── 1. Cliente ────────────────────────────────────────────────────────────
     st.subheader("1. Dados do Cliente")
-    c1, c2, c3 = st.columns([2, 2, 1.5])
-    client   = c1.text_input("Nome do cliente *", value=_crm_pre.get("client",""), placeholder="Ex: João Silva")
-    company  = c2.text_input("Empresa", value=_crm_pre.get("company",""), placeholder="Ex: Geppit Group EOOD")
-    country  = c3.text_input("País *", value=_crm_pre.get("country",""), placeholder="Ex: Bulgaria")
-    c4, c5 = st.columns([3, 1])
-    email    = c4.text_input("Email do cliente *", value=_crm_pre.get("email",""), placeholder="Ex: contact@geppit.eu")
-    language = c5.selectbox("Língua", ["EN","PT","ES","FR"])
 
-    # ── Lookup automático no CRM ──────────────────────────────────────────────
-    if email and "@" in email:
+    # Procurar cliente na BD → auto-preenchimento
+    _sc1, _sc2 = st.columns([4, 1])
+    _cli_q = _sc1.text_input("🔎 Procurar cliente na BD (nome, VAT ou email)", key="nc_search",
+                             placeholder="Escreve e clica Procurar — preenche automaticamente")
+    if _sc2.button("Procurar", use_container_width=True, key="nc_search_btn") and _cli_q.strip():
+        _m = find_client(_cli_q)
+        if _m:
+            st.session_state["nc_client"]    = _m.get("contact_name") or _m.get("company_name") or ""
+            st.session_state["nc_company"]   = _m.get("company_name") or ""
+            st.session_state["nc_country"]   = _m.get("country") or ""
+            st.session_state["nc_email"]     = _m.get("contact_email") or ""
+            st.session_state["nc_client_id"] = _m.get("id")
+            st.session_state["nc_found"]     = _m.get("company_name")
+            st.rerun()
+        else:
+            st.session_state["nc_client_id"] = None
+            st.warning("Cliente não encontrado na BD. Preenche manualmente (será criado ao guardar) "
+                       "ou regista-o primeiro no CRM com a ficha completa de 13 campos.")
+
+    # seed inicial (prefill vindo do CRM, 1ª vez)
+    for _k, _v in [("nc_client", _crm_pre.get("client", "")), ("nc_company", _crm_pre.get("company", "")),
+                   ("nc_country", _crm_pre.get("country", "")), ("nc_email", _crm_pre.get("email", ""))]:
+        st.session_state.setdefault(_k, _v)
+
+    c1, c2, c3 = st.columns([2, 2, 1.5])
+    client   = c1.text_input("Nome do cliente *", key="nc_client", placeholder="Ex: João Silva")
+    company  = c2.text_input("Empresa", key="nc_company", placeholder="Ex: Geppit Group EOOD")
+    country  = c3.text_input("País *", key="nc_country", placeholder="Ex: Bulgaria")
+    c4, c5 = st.columns([3, 1])
+    email    = c4.text_input("Email do cliente *", key="nc_email", placeholder="Ex: contact@geppit.eu")
+    language = c5.selectbox("Língua", ["EN", "PT", "ES", "FR"])
+
+    # ── Estado do cliente (BD / CRM por email / novo) ─────────────────────────
+    if st.session_state.get("nc_client_id"):
+        st.success(f"✅ **Cliente da BD:** {st.session_state.get('nc_found','—')} — dados preenchidos automaticamente.")
+    elif email and "@" in email:
         _crm_match = get_client_by_email(email)
         if _crm_match:
-            _cm = _crm_match
+            st.session_state["nc_client_id"] = _crm_match.get("id")
             st.success(
-                f"✅ **Cliente encontrado no CRM** — "
-                f"{_cm.get('company_name','—')} · {_cm.get('country','—')} · "
-                f"{_cm.get('client_type','—')} · Status: {_cm.get('status','—')}"
+                f"✅ **Cliente encontrado no CRM** (por email) — "
+                f"{_crm_match.get('company_name','—')} · {_crm_match.get('country','—')} · "
+                f"Status: {_crm_match.get('status','—')}"
             )
         else:
             _dups = find_duplicates(company_name=company) if company else []
             if _dups:
                 st.warning(
-                    f"⚠️ Email não encontrado mas existe empresa semelhante: "
+                    "⚠️ Email não encontrado mas existe empresa semelhante: "
                     + " | ".join(f"{d.get('company_name')} ({d.get('contact_email','')})" for d in _dups[:3])
                 )
             else:
                 st.info("🆕 Novo cliente — será criado no CRM ao guardar o deal.")
+
+    # Cliente selecionado com ficha incompleta → pedir para completar os campos em falta
+    if st.session_state.get("nc_client_id"):
+        _full_sel = get_client(str(st.session_state["nc_client_id"]))
+        _miss = client_form.missing_fields(_full_sel) if _full_sel else []
+        if _miss:
+            st.warning(f"⚠️ Este cliente tem **{len(_miss)} campo(s) por preencher**: {', '.join(_miss)}")
+            with st.expander("✏️ Completar dados em falta agora", expanded=True):
+                if _full_sel and client_form.render_client_form(
+                        prefill=_full_sel, client_id=st.session_state["nc_client_id"], ns="nc_complete"):
+                    st.rerun()
+
+    with st.expander("➕ Cliente novo? Registar ficha completa (13 campos)"):
+        _newid = client_form.render_client_form(ns="nc_new")
+        if _newid:
+            _nc = get_client(_newid) or {}
+            st.session_state["nc_client"]    = _nc.get("contact_name") or _nc.get("company_name") or ""
+            st.session_state["nc_company"]   = _nc.get("company_name") or ""
+            st.session_state["nc_country"]   = _nc.get("country") or ""
+            st.session_state["nc_email"]     = _nc.get("contact_email") or ""
+            st.session_state["nc_client_id"] = _newid
+            st.session_state["nc_found"]     = _nc.get("company_name")
+            st.rerun()
 
     notes = st.text_area("Notas / instruções adicionais para o email (opcional)", height=55,
         placeholder="Ex: desconto extra 2%, prazo especial...",
@@ -449,15 +524,8 @@ if page == "🆕  Nova Cotação":
                                help="Portugal: 23% | Internacional: isento por defeito")
         vat_rate = 0.23 if "23%" in vat_sel else 0.0
     with cc4:
-        # Pre-fill from simulator if a rate was chosen
-        if "freight_from_sim" in st.session_state:
-            st.session_state["freight_cost_input"] = st.session_state.pop("freight_from_sim")
-        freight_cost = st.number_input(
-            "🚚 Frete (€)", min_value=0.0,
-            step=50.0, format="%.2f",
-            key="freight_cost_input",
-            help="Custo de transporte — preenche manualmente ou usa o Simulador abaixo",
-        )
+        st.caption("🚚 Transporte")
+        st.caption("calculado na secção **4. Logística & Transporte** (depois dos produtos)")
 
     availability = st.text_input(
         "📦 Availability / ETA to Worten",
@@ -465,8 +533,8 @@ if page == "🆕  Nova Cotação":
         help="Disponibilidade ou prazo de entrega a incluir na proposta"
     )
 
-    # ── Mini-simulador de transporte ──────────────────────────────────────────
-    with st.expander("🚚 Consultar Simulador de Transporte", expanded=False):
+    # ── Mini-simulador de transporte (MOVIDO para a secção 4, após produtos) ──
+    if False:
         _sim_tc = load_transport()
         if not _sim_tc or not _sim_tc.get("destinations"):
             st.warning("Cache de transporte não disponível. Vai a **🚚 Logística → Actualizar Cache**.")
@@ -535,6 +603,8 @@ if page == "🆕  Nova Cotação":
                             st.rerun()
 
     st.divider()
+
+    freight_cost = 0.0  # default; recalculado na secção 4 (Logística & Transporte)
 
     # ── 3. Produtos ───────────────────────────────────────────────────────────
     st.subheader("3. Produtos a Cotar")
@@ -746,11 +816,11 @@ if page == "🆕  Nova Cotação":
             sell_in   = d.get("sell_in")
             ean       = d.get("ean") or "—"
 
-            cols = st.columns([0.8, 1.2, 1.5, 2.8, 1.4, 1.4, 1.4, 1.2, 1.6, 1.4, 1.4, 0.5])
+            cols = st.columns([1.6, 1.1, 1.3, 2.2, 1.3, 1.4, 1.4, 1.2, 1.6, 1.3, 1.3, 0.5])
 
             if f"qty_{sku}" not in st.session_state:
                 st.session_state[f"qty_{sku}"] = 1
-            qty_map[sku] = cols[0].number_input("", min_value=1, step=1,
+            qty_map[sku] = cols[0].number_input("Qtd", min_value=1, step=1,
                                                 key=f"qty_{sku}", label_visibility="collapsed")
 
             cols[1].markdown(f"**`{sku}`**")
@@ -861,7 +931,114 @@ if page == "🆕  Nova Cotação":
             st.markdown('<div class="warn-box">⚠️ Alguns SKUs sem FC disponível. '
                         'Verifica o simulador.</div>', unsafe_allow_html=True)
 
-        # ── 4. Resumo financeiro ──────────────────────────────────────────────
+        # ── 4. Logística & Transporte (auto a partir dos produtos) ────────────
+        st.markdown("---")
+        st.subheader("4. Logística & Transporte")
+        import volumetria as _vol
+        _vlk_nc = _vol.load_lookup()
+        _tot_pal = 0
+        _miss_vol = False
+        _lh = st.columns([4, 1, 1.4, 1.2])
+        for _ch, _th in zip(_lh, ["Produto", "Qtd", "Un./palete", "Paletes"]):
+            _ch.caption(_th)
+        for _s in basket:
+            _q = int(qty_map.get(_s, 1))
+            _upp = _vlk_nc.get(str(_s))
+            _pal = _vol.pallets_for(_q, _upp) if _upp else None
+            if _pal:
+                _tot_pal += _pal
+            else:
+                _miss_vol = True
+            _lr = st.columns([4, 1, 1.4, 1.2])
+            _lr[0].caption(f"{basket[_s].get('name','')[:42]} · {_s}")
+            _lr[1].caption(str(_q))
+            _lr[2].caption(str(_upp or "—"))
+            _lr[3].caption(str(_pal if _pal is not None else "—"))
+        _pmA, _pmB = st.columns([1, 3])
+        _pmA.metric("Total de paletes", _tot_pal)
+        if _miss_vol:
+            _pmB.caption("⚠️ Alguns SKUs sem volumetria — total estimado só com os que têm dados.")
+
+        _tcache = load_transport()
+
+        # ── Morada de entrega (base do cálculo do transporte) ─────────────────
+        st.markdown("**📍 Morada de entrega** (base do cálculo do transporte)")
+        _cli_full = get_client(str(st.session_state["nc_client_id"])) if st.session_state.get("nc_client_id") else None
+        _deliv_addrs = (_cli_full or {}).get("delivery_addresses") or []
+        _base = {}
+        if _deliv_addrs:
+            _dopts = [f"{a.get('label') or '—'}: {a.get('address','')} {a.get('zip','')} {a.get('city','')} {a.get('country','')}"
+                      for a in _deliv_addrs] + ["➕ Outra (manual)"]
+            _dsel = st.selectbox("Morada registada do cliente", range(len(_dopts)),
+                                 format_func=lambda i: _dopts[i], key="nc_deliv_sel")
+            _base = _deliv_addrs[_dsel] if _dsel < len(_deliv_addrs) else {}
+        _da1, _da2, _da3 = st.columns([2, 1.3, 3])
+        _d_country = _da1.text_input("País", value=_base.get("country") or (country or ""), key="nc_d_country")
+        _d_zip     = _da2.text_input("Código Postal", value=_base.get("zip") or "", key="nc_d_zip")
+        _d_addr    = _da3.text_input("Morada", value=_base.get("address") or "", key="nc_d_addr")
+
+        # Total de paletes automático (se sem volumetria, permite manual)
+        if _tot_pal > 0:
+            _tpal = int(_tot_pal)
+            st.caption(f"📦 Paletes (automático a partir dos produtos): **{_tpal}**")
+        else:
+            _tpal = int(st.number_input("📦 Paletes (sem volumetria — indica manualmente)",
+                                        min_value=1, max_value=33, value=1, step=1, key="nc_t_pal_man"))
+
+        if not _tcache or not _tcache.get("destinations"):
+            st.caption("Simulador de transporte indisponível — atualiza a cache em 🚚 Logística.")
+        else:
+            _ctrs = get_countries(_tcache)
+            _CTRY_ALIAS = {
+                "holland": "holanda", "netherlands": "holanda", "the netherlands": "holanda", "nederland": "holanda",
+                "spain": "espanha", "españa": "espanha", "france": "frança", "germany": "alemanha", "deutschland": "alemanha",
+                "belgium": "bélgica", "belgique": "bélgica", "italy": "itália", "italia": "itália",
+                "poland": "polónia", "polska": "polónia", "uk": "reino unido", "united kingdom": "reino unido",
+                "england": "reino unido", "ireland": "irlanda", "luxembourg": "luxemburgo", "austria": "áustria",
+            }
+            _dcl = (_d_country or "").strip().lower()
+            _dcl = _CTRY_ALIAS.get(_dcl, _dcl)
+            _sim_ctry = next((c for c in _ctrs if c.lower() == _dcl), None) \
+                or next((c for c in _ctrs if (_dcl and (c.lower() in _dcl or _dcl in c.lower()))), None)
+            _zone = None
+            if _sim_ctry:
+                _cps = get_cps_for_country(_sim_ctry, _tcache)
+                _pcd = re.sub(r"\D", "", _d_zip or "")
+                for z in sorted(_cps, key=lambda x: len(re.sub(r"\D", "", str(x))), reverse=True):
+                    _zd = re.sub(r"\D", "", str(z))
+                    if _zd and _pcd.startswith(_zd):
+                        _zone = z
+                        break
+                if _zone is None and _cps:
+                    _zone = _cps[0]
+            if _sim_ctry and _zone:
+                _qs = get_quote(c_cp=f"{_sim_ctry}{_zone}", n_pallets=int(_tpal),
+                                cargo_value=0.0, include_insurance=False, cache=_tcache)
+                if _qs:
+                    _best = min(_qs, key=lambda x: x["total"])
+                    _auto_fr = round(float(_best["total"]), 2)
+                    st.session_state["nc_carrier"] = _best["carrier"]
+                    # auto-preenche o frete sempre que a cotação automática muda (mantém edição manual entretanto)
+                    _sig = f"{_sim_ctry}|{_zone}|{int(_tpal)}|{_auto_fr}"
+                    if st.session_state.get("_nc_auto_sig") != _sig:
+                        st.session_state["nc_freight"] = _auto_fr
+                        st.session_state["_nc_auto_sig"] = _sig
+                    st.success(f"✅ Transporte automático: **{_best['carrier']}** · {_auto_fr:,.2f} € "
+                               f"({int(_tpal)} palete(s) · {_sim_ctry} zona {_zone})")
+                    with st.expander("Ver todas as transportadoras"):
+                        for _r in sorted(_qs, key=lambda x: x["total"]):
+                            st.caption(f"{_r['carrier']}: {_r['total']:,.2f} €"
+                                       + (f" · {_r.get('tt_days')}d" if _r.get('tt_days') else ""))
+                else:
+                    st.warning(f"Sem cotações de transporte para {_sim_ctry} zona {_zone} · {int(_tpal)} palete(s).")
+            else:
+                st.caption("⚠️ Indica **País** e **Código Postal** válidos para o transporte automático.")
+
+        freight_cost = st.number_input("🚚 Custo de transporte (€)", min_value=0.0,
+                                       step=50.0, format="%.2f", key="nc_freight",
+                                       help="Calculado a partir da morada de entrega + paletes. Podes ajustar.")
+
+        # ── 5. Resumo financeiro ──────────────────────────────────────────────
         st.markdown("---")
         so_manual_map = st.session_state.get("so_manual", {})
 
@@ -997,7 +1174,9 @@ if page == "🆕  Nova Cotação":
                                    freight_cost=freight_cost,
                                    availability=availability,
                                    salesperson_email=_cu.get("email",""),
-                                   company=company)
+                                   company=company,
+                                   client_id=st.session_state.get("nc_client_id"),
+                                   supplier_ids=st.session_state.get("nc_carrier"))
 
             # Auto-registar/enriquecer cliente no CRM
             try:
@@ -1057,6 +1236,30 @@ if page == "🆕  Nova Cotação":
 elif page == "📊  Dashboard":
     import pandas as pd
     import plotly.graph_objects as go
+
+    # ── Pipeline — resumo rápido no ecrã de entrada (ações imediatas) ──────────
+    st.markdown("### 💼 Pipeline — visão rápida")
+    try:
+        _ps0 = get_pipeline_stats(salesperson_filter=(_cu.get("email") if _role in OWN_DATA_ONLY else None))
+        _byst0 = _ps0.get("by_status", {})
+        _stale0 = _ps0.get("stale", [])
+        _pn = sum(_byst0.get(s, {}).get("count", 0) for s in PIPELINE_DASHBOARD_STATUSES)
+        _pv = sum(_byst0.get(s, {}).get("value", 0) for s in PIPELINE_DASHBOARD_STATUSES)
+        _q1, _q2, _q3, _q4 = st.columns(4)
+        _q1.metric("💼 Pipeline", f"{_pn} deals", f"{_pv:,.0f} €")
+        _q2.metric("📦 Enc. Confirmadas", _byst0.get("Encomenda Confirmada", {}).get("count", 0))
+        _q3.metric("🧾 Faturado", f"{_byst0.get('Faturado', {}).get('count', 0)} deals",
+                   f"{_byst0.get('Faturado', {}).get('value', 0):,.0f} €")
+        _q4.metric("⏰ Em risco", len(_stale0))
+        if _stale0:
+            st.warning(f"⚠️ **{len(_stale0)} deal(s) sem atividade recente** — rever em **📋 Deals em Curso**.")
+        # mini-distribuição por estado do pipeline ativo
+        _act = [s for s in PIPELINE_DASHBOARD_STATUSES if _byst0.get(s, {}).get("count", 0)]
+        if _act:
+            st.caption("Por estado: " + " · ".join(f"{s}: {_byst0[s]['count']}" for s in _act))
+    except Exception as _e:
+        st.caption(f"(pipeline indisponível: {_e})")
+    st.divider()
 
     # ── CSS cards ─────────────────────────────────────────────────────────────
     st.markdown("""
@@ -1961,8 +2164,9 @@ elif page == "📋  Deals em Curso":
                             placeholder="YYYY-MM-DD", key=f"op_id_{did}")
                         _op_inv_val     = _op_c6.number_input("Valor Fatura (€)",
                             min_value=0.0, step=0.01, format="%.2f",
-                            value=float(deal.get("Valor Fatura (€)") or 0),
-                            key=f"op_iv_{did}")
+                            value=float(deal.get("Valor Fatura (€)") or deal.get("Valor Proposto (€)") or 0),
+                            key=f"op_iv_{did}",
+                            help="Pré-preenchido com o valor da proposta; ajusta se necessário.")
 
                         _op_c7, _op_c8, _op_c9 = st.columns(3)
                         _op_cmr         = _op_c7.text_input("CMR Nº",
@@ -1971,10 +2175,11 @@ elif page == "📋  Deals em Curso":
                         _op_pl          = _op_c8.text_input("Packing List Nº",
                             value=str(deal.get("Packing List Nº","") or ""),
                             key=f"op_pl_{did}")
-                        _op_sup         = _op_c9.text_input("Fornecedor(es)",
+                        _op_sup         = _op_c9.text_input("Fornecedor(es) / Operador logístico",
                             value=str(deal.get("Fornecedor(es)","") or ""),
-                            placeholder="Ex: Philips, Braun",
-                            key=f"op_sup_{did}")
+                            placeholder="Operador logístico (transportadora)",
+                            key=f"op_sup_{did}",
+                            help="Pré-preenchido com a transportadora escolhida na proposta.")
 
                         if st.button("💾 Guardar Operacional", key=f"op_save_{did}", type="secondary"):
                             _op_ok = update_deal_operational(
@@ -2397,7 +2602,10 @@ elif page == "👥  CRM — Clientes":
                 st.info("Sem clientes na base de dados. Adiciona o primeiro em **➕ Novo Cliente**.")
         else:
             STATUS_ICON = {"Ativo":"🟢","Inativo":"⚫","Prospeto":"🔵","Bloqueado":"🔴"}
-            for c in clients:
+            _crm_list = clients[:25] if _TEST_MODE else clients
+            if _TEST_MODE and len(clients) > 25:
+                st.caption(f"🧪 A mostrar 25 de {len(clients)} clientes (usa a Pesquisa para encontrar outros).")
+            for c in _crm_list:
                 cid       = str(c.get("id",""))
                 cname     = c.get("company_name","—")
                 cctry     = c.get("country","—")
@@ -2453,9 +2661,28 @@ elif page == "👥  CRM — Clientes":
                     st.markdown("---")
 
                     # ── Editar cliente ─────────────────────────────────────
-                    with st.expander("✏️ Editar dados do cliente", expanded=False):
-                        full = get_client(cid)
-                        if full:
+                    _miss_c = client_form.missing_fields(c)
+                    if _miss_c:
+                        st.warning(f"⚠️ **Ficha incompleta** — {len(_miss_c)} campo(s) por preencher: "
+                                   f"{', '.join(_miss_c)}.  Abre a edição para completar.")
+                    else:
+                        st.success("✅ Ficha de cliente completa.")
+
+                    with st.expander("✏️ Editar dados do cliente (ficha completa)", expanded=(st.session_state.get("edit_cid") == cid)):
+                        if st.session_state.get("edit_cid") != cid:
+                            if st.button("✏️ Abrir edição completa (13 campos)", key=f"open_ed_{cid}"):
+                                st.session_state["edit_cid"] = cid
+                                st.rerun()
+                        else:
+                            _full_ed = get_client(cid)
+                            if _full_ed and client_form.render_client_form(prefill=_full_ed, client_id=cid, ns="edit"):
+                                st.session_state["edit_cid"] = None
+                                st.rerun()
+                            if st.button("Cancelar", key=f"cancel_ed_{cid}"):
+                                st.session_state["edit_cid"] = None
+                                st.rerun()
+                        full = None
+                        if False and full:
                             e1, e2, e3 = st.columns(3)
                             e_company  = e1.text_input("Nome Empresa *", value=full.get("company_name",""), key=f"ec_{cid}")
                             e_legal    = e2.text_input("Nome Legal", value=full.get("legal_name",""), key=f"el_{cid}")
@@ -2798,6 +3025,11 @@ elif page == "👥  CRM — Clientes":
     # ════════════════════════════════════════════════════════════════════════
     with tab_new:
         st.subheader("Novo Cliente")
+        import client_form
+        if client_form.render_client_form(ns="crm_new"):
+            st.rerun()
+
+    if False:  # ── formulário antigo desativado (substituído por client_form) ──
         n1, n2, n3 = st.columns(3)
         new_company  = n1.text_input("Nome Empresa *", key="new_company")
         new_legal    = n2.text_input("Nome Legal / Faturação", key="new_legal")
@@ -3525,7 +3757,7 @@ elif page == "🤝  Fornecedores":
             _order_deals = []
             try:
                 from deal_tracker import _get_client as _dt_client
-                _od_res = (_dt_client().table("deals")
+                _od_res = (_dt_client().table(_TBL_DEALS)
                            .select("deal_id,client,status,expected_delivery,supplier_ids,proposed_value")
                            .in_("status", _POS)
                            .not_.is_("expected_delivery", "null")
@@ -4277,3 +4509,88 @@ elif page == "⚙️  Administração":
                     st.rerun()
                 else:
                     st.error(f"Erro: {msg}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PÁGINA — ADJUDICADAS (Passo 3): BoxMovers + Admin/Stocks + paletes
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "📦  Adjudicadas":
+    st.title("📦 Propostas Adjudicadas")
+    st.caption("Registo no BoxMovers de teste + layouts Admin/Stocks. Estado considerado adjudicado: **Encomenda Confirmada**.")
+    import boxmovers_writer, volumetria, layouts
+    from pathlib import Path as _Path
+
+    _adj = [d for d in list_deals() if d.get("Status") == "Encomenda Confirmada"]
+    if not _adj:
+        st.info("Sem propostas em **Encomenda Confirmada**. Em **Deals em Curso** muda o estado de uma proposta "
+                "para 'Encomenda Confirmada' (= adjudicada) e ela aparece aqui.")
+    else:
+        _opt = {f"{d.get('Deal ID')} · {d.get('Cliente')} · {d.get('Valor Proposto (€)') or 0} €": d.get("Deal ID")
+                for d in _adj}
+        _sel = st.selectbox("Proposta adjudicada", list(_opt.keys()))
+        deal = get_deal(_opt[_sel]) or {}
+        sd = deal.get("_skus_detail") or {}
+        client = find_client(deal.get("Cliente") or "") or {}
+
+        st.subheader("1. Linhas e nº de paletes (calculado a partir das quantidades)")
+        _vc1, _vc2 = st.columns([3, 1])
+        _vlk = volumetria.load_lookup()
+        _vc1.caption("Volumetria: " + ("ficheiro sincronizado (auto) + override manual"
+                     if _vlk else "manual — ficheiro Volumetria ainda não sincronizado"))
+        if _vc2.button("🔄 Reler volumetria"):
+            with st.spinner("A procurar o ficheiro Volumetria no OneDrive..."):
+                _vlk = volumetria.load_lookup(force=True)
+            st.success(f"{len(_vlk)} SKUs lidos do ficheiro." if _vlk else "Ficheiro Volumetria não encontrado (sincroniza-o no OneDrive).")
+
+        _lines, _total_pal = [], 0
+        for sku, item in sd.items():
+            data = item.get("data") or {}
+            qty = int(item.get("qty") or 0)
+            _c = st.columns([3, 1, 1.4, 1])
+            _c[0].markdown(f"**{data.get('name', sku)}**  \n`{sku}` · EAN {data.get('ean','—')}")
+            _c[1].markdown(f"Qtd  \n**{qty}**")
+            _upp = _c[2].number_input("un./palete", min_value=0.0, step=1.0,
+                                      value=float(_vlk.get(str(sku), 0) or 0), key=f"upp_{_sel}_{sku}")
+            _pal = volumetria.pallets_for(qty, _upp) if _upp else None
+            _c[3].markdown(f"Paletes  \n**{_pal if _pal is not None else '—'}**")
+            if _pal:
+                _total_pal += _pal
+            _lines.append({"sku": sku, "ean": data.get("ean"), "name": data.get("name"),
+                           "qty": qty, "price": item.get("pvp"), "upp": _upp or None, "pallets": _pal})
+        st.metric("Total de paletes", _total_pal)
+
+        st.subheader("2. Entrega e transporte")
+        _dl = client.get("delivery_addresses") or []
+        _deliv = {}
+        if _dl:
+            _labels = [f"{x.get('label') or '—'}: {x.get('address','')} {x.get('city','')}" for x in _dl]
+            _deliv = _dl[st.selectbox("Morada de entrega", range(len(_labels)), format_func=lambda i: _labels[i])]
+        else:
+            st.caption("⚠️ Cliente sem moradas de entrega — completa a ficha do cliente (13 campos).")
+        _transport = st.number_input("Preço do transporte (€)", min_value=0.0, step=10.0,
+                                     value=float(deal.get("Frete (€)") or 0))
+
+        st.subheader("3. Ações")
+        _a, _b = st.columns(2)
+        if _a.button("📦 Registar no BoxMovers2026_TESTE", use_container_width=True, type="primary"):
+            with st.spinner("A escrever no BoxMovers..."):
+                _n, _msg = boxmovers_writer.append_deal({
+                    "deal_id": deal.get("Deal ID"), "client": deal.get("Cliente"),
+                    "status": deal.get("Status"), "created_at": deal.get("Data Criação"),
+                    "skus_detail": sd})
+            (st.success if _n else st.error)(_msg)
+
+        _incl = _b.checkbox("Incluir qtd/palete nos layouts", value=True)
+        if _b.button("📧 Gerar layouts Admin/Stocks", use_container_width=True):
+            _admin, _stocks = layouts.build_layouts(
+                deal.get("Deal ID"), client, _deliv, _lines, deal.get("Incoterm"),
+                _transport, include_pallets=_incl, total_pallets=_total_pal)
+            _od = _Path(__file__).parent / "emails_out"
+            _od.mkdir(exist_ok=True)
+            (_od / f"{deal.get('Deal ID')}_admin.html").write_text(_admin, encoding="utf-8")
+            (_od / f"{deal.get('Deal ID')}_stocks.html").write_text(_stocks, encoding="utf-8")
+            st.success("✅ Layouts gerados (gravados em emails_out/). Em teste **não são enviados**.")
+            with st.expander("📋 Layout Administrativo", expanded=True):
+                st.markdown(_admin, unsafe_allow_html=True)
+            with st.expander("📦 Layout Stocks"):
+                st.markdown(_stocks, unsafe_allow_html=True)

@@ -5,7 +5,7 @@ Gestão centralizada de fornecedores/marcas para TSVR Partners Export.
 """
 
 from datetime import datetime
-from config import SUPABASE_URL, SUPABASE_KEY
+from config import SUPABASE_URL, SUPABASE_KEY, TBL_SUPPLIERS, TBL_DEALS
 
 SUPPLIER_STATUSES = ["Ativo", "Em Negociação", "Inativo", "Bloqueado"]
 SUPPLIER_TYPES    = ["Fornecedor Direto", "Marca Própria", "Agente", "Distribuidor", "Outro"]
@@ -72,14 +72,14 @@ def add_supplier(data: dict) -> str:
         "created_at":      now,
         "updated_at":      now,
     }
-    res = _db().table("suppliers").insert(row).execute()
+    res = _db().table(TBL_SUPPLIERS).insert(row).execute()
     return str(res.data[0]["id"]) if res.data else ""
 
 
 def update_supplier(supplier_id: str, data: dict) -> bool:
     try:
         data["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-        _db().table("suppliers").update(data).eq("id", supplier_id).execute()
+        _db().table(TBL_SUPPLIERS).update(data).eq("id", supplier_id).execute()
         return True
     except Exception as e:
         print(f"[supplier_tracker] update_supplier erro: {e}")
@@ -88,7 +88,7 @@ def update_supplier(supplier_id: str, data: dict) -> bool:
 
 def get_supplier(supplier_id: str) -> dict | None:
     try:
-        res = _db().table("suppliers").select("*").eq("id", supplier_id).single().execute()
+        res = _db().table(TBL_SUPPLIERS).select("*").eq("id", supplier_id).single().execute()
         return res.data or None
     except Exception as e:
         print(f"[supplier_tracker] get_supplier erro: {e}")
@@ -97,7 +97,7 @@ def get_supplier(supplier_id: str) -> dict | None:
 
 def get_supplier_by_email(email: str) -> dict | None:
     try:
-        res = (_db().table("suppliers")
+        res = (_db().table(TBL_SUPPLIERS)
                .select("*").ilike("contact_email", email).limit(1).execute())
         return res.data[0] if res.data else None
     except Exception:
@@ -106,7 +106,7 @@ def get_supplier_by_email(email: str) -> dict | None:
 
 def get_supplier_by_brand(brand: str) -> dict | None:
     try:
-        res = (_db().table("suppliers")
+        res = (_db().table(TBL_SUPPLIERS)
                .select("*").ilike("brand", brand).limit(1).execute())
         return res.data[0] if res.data else None
     except Exception:
@@ -121,7 +121,7 @@ def list_suppliers(
     search: str = None,
 ) -> list:
     try:
-        q = _db().table("suppliers").select(
+        q = _db().table(TBL_SUPPLIERS).select(
             "id,supplier_name,brand,brands,country,contact_name,contact_email,"
             "contact_phone,supplier_type,status,cgf,categories,incoterm,"
             "payment_terms,notes,created_at,updated_at"
@@ -140,7 +140,7 @@ def list_suppliers(
 
 def count_suppliers() -> int:
     try:
-        res = _db().table("suppliers").select("id", count="exact").execute()
+        res = _db().table(TBL_SUPPLIERS).select("id", count="exact").execute()
         return res.count or 0
     except Exception:
         return 0
@@ -148,7 +148,7 @@ def count_suppliers() -> int:
 
 def delete_supplier(supplier_id: str) -> bool:
     try:
-        _db().table("suppliers").delete().eq("id", supplier_id).execute()
+        _db().table(TBL_SUPPLIERS).delete().eq("id", supplier_id).execute()
         return True
     except Exception as e:
         print(f"[supplier_tracker] delete_supplier erro: {e}")
@@ -167,20 +167,20 @@ def find_duplicate_suppliers(
     _fields = "id,supplier_name,brand,contact_name,contact_email,country,status"
 
     if email and email.strip():
-        res = db.table("suppliers").select(_fields).ilike("contact_email", email.strip()).execute()
+        res = db.table(TBL_SUPPLIERS).select(_fields).ilike("contact_email", email.strip()).execute()
         for r in (res.data or []):
             if r["id"] not in seen_ids:
                 results.append(r); seen_ids.add(r["id"])
 
     if supplier_name and supplier_name.strip():
-        res = (db.table("suppliers").select(_fields)
+        res = (db.table(TBL_SUPPLIERS).select(_fields)
                .ilike("supplier_name", f"%{supplier_name.strip()}%").limit(5).execute())
         for r in (res.data or []):
             if r["id"] not in seen_ids:
                 results.append(r); seen_ids.add(r["id"])
 
     if brand and brand.strip():
-        res = (db.table("suppliers").select(_fields)
+        res = (db.table(TBL_SUPPLIERS).select(_fields)
                .ilike("brand", f"%{brand.strip()}%").limit(5).execute())
         for r in (res.data or []):
             if r["id"] not in seen_ids:
@@ -215,12 +215,12 @@ def get_supplier_contacts(supplier_id: str) -> list:
                 "primary":  True,
                 "notes":    "",
             }]
-            _db().table("suppliers").update({"contacts": contacts}).eq("id", supplier_id).execute()
+            _db().table(TBL_SUPPLIERS).update({"contacts": contacts}).eq("id", supplier_id).execute()
 
     has_primary = any(c.get("primary") for c in contacts)
     if contacts and not has_primary:
         contacts[0]["primary"] = True
-        _db().table("suppliers").update({"contacts": contacts}).eq("id", supplier_id).execute()
+        _db().table(TBL_SUPPLIERS).update({"contacts": contacts}).eq("id", supplier_id).execute()
 
     return contacts
 
@@ -248,7 +248,7 @@ def save_supplier_contacts(supplier_id: str, contacts: list) -> bool:
         "updated_at":        datetime.now().strftime("%Y-%m-%d %H:%M"),
     }
     try:
-        _db().table("suppliers").update(patch).eq("id", supplier_id).execute()
+        _db().table(TBL_SUPPLIERS).update(patch).eq("id", supplier_id).execute()
         return True
     except Exception as e:
         print(f"[supplier_tracker] save_supplier_contacts erro: {e}")
@@ -268,7 +268,7 @@ def supplier_quality_report() -> dict:
     from difflib import SequenceMatcher
     from client_tracker import COUNTRY_PHONE_CODES
 
-    suppliers = _db().table("suppliers").select("*").execute().data or []
+    suppliers = _db().table(TBL_SUPPLIERS).select("*").execute().data or []
 
     # 1. Telefones sem indicativo
     phone_issues = []
@@ -337,7 +337,7 @@ def auto_fill_cgf_from_reference() -> dict:
     com os valores de referência do Business Plan.
     Devolve {"updated": int, "skipped": int}.
     """
-    suppliers = _db().table("suppliers").select("id,brand,cgf").execute().data or []
+    suppliers = _db().table(TBL_SUPPLIERS).select("id,brand,cgf").execute().data or []
     updated = skipped = 0
     for s in suppliers:
         if s.get("cgf"):
@@ -400,7 +400,7 @@ def merge_suppliers(primary_id: str, secondary_id: str) -> bool:
         update_supplier(primary_id, patch)
 
     try:
-        _db().table("suppliers").delete().eq("id", secondary_id).execute()
+        _db().table(TBL_SUPPLIERS).delete().eq("id", secondary_id).execute()
         return True
     except Exception as e:
         print(f"[supplier_tracker] merge_suppliers erro: {e}")
@@ -418,7 +418,7 @@ def get_supplier_deals(supplier_name: str, brand: str = "") -> list:
         all_results  = []
         seen_ids     = set()
         for term in search_terms:
-            res = (_dt_client().table("deals")
+            res = (_dt_client().table(TBL_DEALS)
                    .select("deal_id,client,country,status,proposed_value,"
                            "order_date,expected_delivery,actual_delivery,"
                            "invoice_number,invoice_value,updated_at,supplier_ids")
@@ -446,12 +446,12 @@ def get_cgf_dashboard_data() -> list:
         from deal_tracker import _get_client as _dt_client
         from config import PIPELINE_CLOSED_STATUSES
 
-        suppliers = (_db().table("suppliers")
+        suppliers = (_db().table(TBL_SUPPLIERS)
                      .select("id,supplier_name,brand,cgf,status")
                      .gt("cgf", 0)
                      .execute().data or [])
 
-        all_deals = (_dt_client().table("deals")
+        all_deals = (_dt_client().table(TBL_DEALS)
                      .select("deal_id,supplier_ids,proposed_value,invoice_value,status")
                      .execute().data or [])
 

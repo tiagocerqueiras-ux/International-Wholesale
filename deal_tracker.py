@@ -8,7 +8,7 @@ API idêntica à versão Excel para compatibilidade com app.py.
 import json
 from datetime import datetime
 
-from config import SUPABASE_URL, SUPABASE_KEY, STATUSES
+from config import SUPABASE_URL, SUPABASE_KEY, STATUSES, TBL_DEALS
 
 # ── SQL para executar no Supabase (uma única vez) ─────────────────────────────
 # ALTER TABLE deals
@@ -38,7 +38,7 @@ def _next_deal_id() -> str:
     try:
         client = _get_client()
         res = (
-            client.table("deals")
+            client.table(TBL_DEALS)
             .select("deal_id")
             .like("deal_id", f"{prefix}%")
             .order("deal_id", desc=True)
@@ -56,7 +56,7 @@ def _next_deal_id() -> str:
     client = _get_client()
     while True:
         candidate = f"{prefix}{num:03d}"
-        check = client.table("deals").select("deal_id").eq("deal_id", candidate).execute()
+        check = client.table(TBL_DEALS).select("deal_id").eq("deal_id", candidate).execute()
         if not check.data:
             return candidate
         num += 1
@@ -135,6 +135,9 @@ def add_deal(
     availability: str = "",
     salesperson_email: str = "",
     company: str = "",
+    status: str = "Rascunho",
+    client_id=None,
+    supplier_ids=None,
 ) -> str:
     deal_id = _next_deal_id()
     now     = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -183,15 +186,17 @@ def add_deal(
         "vat":                vat_label,
         "freight":            round(freight_cost, 2),
         "availability":       availability,
-        "status":             "Rascunho",
+        "status":             status if status in STATUSES else "Rascunho",
         "updated_at":         now,
         "notes":              notes,
         "skus_detail":        skus_data,
         "salesperson_email":  salesperson_email,
         "company":            company,
+        "client_id":          client_id,
+        "supplier_ids":       supplier_ids,
     }
 
-    _get_client().table("deals").insert(row).execute()
+    _get_client().table(TBL_DEALS).insert(row).execute()
     return deal_id
 
 
@@ -204,7 +209,7 @@ def update_status(deal_id: str, new_status: str, notes: str = "") -> bool:
         # Buscar notas actuais
         existing_notes = ""
         if notes:
-            res = client.table("deals").select("notes").eq("deal_id", deal_id).single().execute()
+            res = client.table(TBL_DEALS).select("notes").eq("deal_id", deal_id).single().execute()
             existing_notes = (res.data or {}).get("notes", "") or ""
             stamp = datetime.now().strftime("%d/%m %H:%M")
             sep   = "\n" if existing_notes else ""
@@ -213,7 +218,22 @@ def update_status(deal_id: str, new_status: str, notes: str = "") -> bool:
         upd = {"status": new_status, "updated_at": now}
         if notes:
             upd["notes"] = notes
-        client.table("deals").update(upd).eq("deal_id", deal_id).execute()
+        client.table(TBL_DEALS).update(upd).eq("deal_id", deal_id).execute()
+
+        # Auto-registo no ficheiro de controlo BoxMovers quando é adjudicada
+        if new_status == "Encomenda Confirmada":
+            try:
+                import boxmovers_writer as _bw
+                if not _bw.is_registered(deal_id):
+                    _d = get_deal(deal_id) or {}
+                    _bw.append_deal({
+                        "deal_id": deal_id, "client": _d.get("Cliente"),
+                        "status": new_status, "created_at": _d.get("Data Criação"),
+                        "skus_detail": _d.get("_skus_detail") or {},
+                    })
+            except Exception as _e:
+                print(f"[deal_tracker] auto BoxMovers erro: {_e}")
+
         return True
     except Exception as e:
         print(f"[deal_tracker] update_status erro: {e}")
@@ -228,7 +248,7 @@ def update_margin(deal_id: str, margin_pct: float, pvp_total: float = None) -> b
         }
         if pvp_total is not None:
             upd["proposed_value"] = round(pvp_total, 2)
-        _get_client().table("deals").update(upd).eq("deal_id", deal_id).execute()
+        _get_client().table(TBL_DEALS).update(upd).eq("deal_id", deal_id).execute()
         return True
     except Exception as e:
         print(f"[deal_tracker] update_margin erro: {e}")
@@ -260,7 +280,7 @@ def update_deal_operational(
         if cmr_number        is not None: upd["cmr_number"]         = cmr_number
         if packing_list      is not None: upd["packing_list"]       = packing_list
         if supplier_ids      is not None: upd["supplier_ids"]       = supplier_ids
-        _get_client().table("deals").update(upd).eq("deal_id", deal_id).execute()
+        _get_client().table(TBL_DEALS).update(upd).eq("deal_id", deal_id).execute()
         return True
     except Exception as e:
         print(f"[deal_tracker] update_deal_operational erro: {e}")
@@ -275,7 +295,7 @@ def get_pipeline_stats(salesperson_filter: str = None) -> dict:
     """
     from config import DEAL_STALE_DAYS
     try:
-        q = _get_client().table("deals").select(
+        q = _get_client().table(TBL_DEALS).select(
             "deal_id,client,status,proposed_value,updated_at,salesperson_email"
         )
         if salesperson_filter:
@@ -335,7 +355,7 @@ def update_deal_prices(deal_id: str, skus_data: dict, pvp_total: float, margin_p
             qty = int(info.get("qty") or 1)
             products.append(f"{d.get('name', sku)[:60]} (x{qty})")
             qty_total += qty
-        _get_client().table("deals").update({
+        _get_client().table(TBL_DEALS).update({
             "skus_detail":    skus_data,
             "proposed_value": round(pvp_total, 2),
             "margin_pct":     f"{margin_pct:.1f}%",
@@ -359,7 +379,7 @@ def duplicate_deal(
     """Duplica um deal existente para um novo cliente. Devolve o novo deal_id."""
     try:
         client = _get_client()
-        res = client.table("deals").select("*").eq("deal_id", deal_id).single().execute()
+        res = client.table(TBL_DEALS).select("*").eq("deal_id", deal_id).single().execute()
         if not res.data:
             return ""
         row = dict(res.data)
@@ -375,7 +395,7 @@ def duplicate_deal(
         row["updated_at"]   = now
         row["notes"]        = f"Duplicado de {deal_id}"
         row.pop("id", None)   # remover PK auto
-        client.table("deals").insert(row).execute()
+        client.table(TBL_DEALS).insert(row).execute()
         return new_id
     except Exception as e:
         print(f"[deal_tracker] duplicate_deal erro: {e}")
@@ -385,7 +405,7 @@ def duplicate_deal(
 def delete_deal(deal_id: str) -> bool:
     """Apaga permanentemente um deal."""
     try:
-        _get_client().table("deals").delete().eq("deal_id", deal_id).execute()
+        _get_client().table(TBL_DEALS).delete().eq("deal_id", deal_id).execute()
         return True
     except Exception as e:
         print(f"[deal_tracker] delete_deal erro: {e}")
@@ -394,7 +414,7 @@ def delete_deal(deal_id: str) -> bool:
 
 def list_deals(status_filter: str = None, salesperson_filter: str = None) -> list:
     try:
-        q = _get_client().table("deals").select(
+        q = _get_client().table(TBL_DEALS).select(
             "deal_id,created_at,client,company,country,client_email,language,"
             "sku_ids,products,avg_unit_cost,eis_da_total,has_sell_in,has_sell_out,"
             "qty_total,proposed_value,margin_pct,incoterm,payment_conditions,"
@@ -415,7 +435,7 @@ def get_deal(deal_id: str) -> dict | None:
     try:
         res = (
             _get_client()
-            .table("deals")
+            .table(TBL_DEALS)
             .select("*")
             .eq("deal_id", deal_id)
             .single()
@@ -437,7 +457,7 @@ def get_sku_price_history(sku_id: str, limit: int = 8) -> list:
     margin_pct, proposed_value, language — ordenados por data desc.
     """
     try:
-        res = (_get_client().table("deals")
+        res = (_get_client().table(TBL_DEALS)
                .select("deal_id,client,company,country,created_at,status,"
                        "margin_pct,proposed_value,language,sku_ids")
                .ilike("sku_ids", f"%{sku_id}%")
@@ -503,7 +523,7 @@ def get_executive_dashboard_data(
             return 0.0
 
     try:
-        q = _get_client().table("deals").select(
+        q = _get_client().table(TBL_DEALS).select(
             "deal_id,client,company,country,status,proposed_value,invoice_value,"
             "margin_pct,salesperson_email,created_at,updated_at,products"
         )

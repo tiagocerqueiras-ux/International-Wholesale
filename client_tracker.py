@@ -5,7 +5,7 @@ Gestão centralizada de clientes B2B para TSVR Partners Export.
 """
 
 from datetime import datetime
-from config import SUPABASE_URL, SUPABASE_KEY
+from config import SUPABASE_URL, SUPABASE_KEY, TBL_CLIENTS, TBL_DEALS
 
 CLIENT_STATUSES = ["Ativo", "Inativo", "Prospeto", "Bloqueado"]
 CLIENT_TYPES    = ["Distribuidor", "Retalhista", "Marketplace", "Agente", "Outro"]
@@ -56,17 +56,31 @@ def add_client(data: dict) -> str:
         "payment_method":      data.get("payment_method", ""),
         "payment_terms":       data.get("payment_terms", ""),
         "notes":               data.get("notes", ""),
+        # ── Campos Fase 1 (onboarding completo) ──────────────────────────────
+        "commercial_cert_doc": data.get("commercial_cert_doc", ""),  # Certidão Comercial
+        "fin_contact_name":    data.get("fin_contact_name", ""),      # Contacto Financeiro
+        "fin_contact_email":   data.get("fin_contact_email", ""),
+        "fin_contact_phone":   data.get("fin_contact_phone", ""),
+        "billing_email":       data.get("billing_email", ""),        # Email faturação
+        "iban":                data.get("iban", ""),
+        "swift":               data.get("swift", ""),
+        "bank_proof_doc":      data.get("bank_proof_doc", ""),       # Comprovativo bancário
+        "credit_insurance":    data.get("credit_insurance", ""),     # Seguro de crédito
+        "credit_limit":        data.get("credit_limit"),             # Limite pretendido
+        "ubos":                data.get("ubos", []),                 # UBOs + administradores
+        "delivery_addresses":  data.get("delivery_addresses", []),   # Moradas de entrega
+        "documents":           data.get("documents", []),           # Metadados de documentos
         "created_at":          now,
         "updated_at":          now,
     }
-    res = _get_client().table("clients").insert(row).execute()
+    res = _get_client().table(TBL_CLIENTS).insert(row).execute()
     return str(res.data[0]["id"]) if res.data else ""
 
 
 def update_client(client_id: str, data: dict) -> bool:
     try:
         data["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-        _get_client().table("clients").update(data).eq("id", client_id).execute()
+        _get_client().table(TBL_CLIENTS).update(data).eq("id", client_id).execute()
         return True
     except Exception as e:
         print(f"[client_tracker] update_client erro: {e}")
@@ -75,7 +89,7 @@ def update_client(client_id: str, data: dict) -> bool:
 
 def get_client(client_id: str) -> dict | None:
     try:
-        res = _get_client().table("clients").select("*").eq("id", client_id).single().execute()
+        res = _get_client().table(TBL_CLIENTS).select("*").eq("id", client_id).single().execute()
         return res.data or None
     except Exception as e:
         print(f"[client_tracker] get_client erro: {e}")
@@ -84,11 +98,39 @@ def get_client(client_id: str) -> dict | None:
 
 def get_client_by_email(email: str) -> dict | None:
     try:
-        res = (_get_client().table("clients")
+        res = (_get_client().table(TBL_CLIENTS)
                .select("*").ilike("contact_email", email).limit(1).execute())
         return res.data[0] if res.data else None
     except Exception:
         return None
+
+
+def find_client(query: str) -> dict | None:
+    """Procura um cliente por QUALQUER campo único (Fase 1: auto-preenchimento).
+    Tenta correspondência exata em VAT, nome, razão social e emails; depois
+    correspondência parcial no nome. Devolve o 1.º cliente encontrado ou None.
+    """
+    q = (query or "").strip()
+    if not q:
+        return None
+    client = _get_client()
+    # 1) match exato em campos "únicos"
+    for field in ("vat", "company_name", "legal_name", "contact_email", "billing_email"):
+        try:
+            res = client.table(TBL_CLIENTS).select("*").ilike(field, q).limit(1).execute()
+            if res.data:
+                return res.data[0]
+        except Exception:
+            pass
+    # 2) fallback: match parcial no nome da empresa
+    try:
+        res = (client.table(TBL_CLIENTS).select("*")
+               .ilike("company_name", f"%{q}%").limit(1).execute())
+        if res.data:
+            return res.data[0]
+    except Exception:
+        pass
+    return None
 
 
 def list_clients(
@@ -99,14 +141,16 @@ def list_clients(
     search: str = None,
 ) -> list:
     _SEL = (
-        "id,company_name,country,market,contact_name,contact_email,contact_phone,"
+        "id,company_name,legal_name,vat,country,market,address,"
+        "contact_name,contact_email,contact_phone,"
         "client_type,status,brands,categories,incoterm,payment_terms,"
-        "notes,created_at,updated_at"
+        "fin_contact_name,billing_email,iban,swift,commercial_cert_doc,bank_proof_doc,"
+        "credit_insurance,ubos,delivery_addresses,notes,created_at,updated_at"
     )
 
     def _base_q():
         """Query base com filtros fixos (sem search)."""
-        q = _get_client().table("clients").select(_SEL).order("company_name")
+        q = _get_client().table(TBL_CLIENTS).select(_SEL).order("company_name")
         if status:      q = q.eq("status", status)
         if market:      q = q.eq("market", market)
         if country:     q = q.ilike("country", f"%{country}%")
@@ -138,7 +182,7 @@ def list_clients(
 def get_company_names() -> list[str]:
     """Devolve lista ordenada de nomes de empresas — usado para autocomplete."""
     try:
-        res = (_get_client().table("clients")
+        res = (_get_client().table(TBL_CLIENTS)
                .select("company_name")
                .order("company_name")
                .execute())
@@ -149,7 +193,7 @@ def get_company_names() -> list[str]:
 
 def count_clients() -> int:
     try:
-        res = _get_client().table("clients").select("id", count="exact").execute()
+        res = _get_client().table(TBL_CLIENTS).select("id", count="exact").execute()
         return res.count or 0
     except Exception:
         return 0
@@ -158,7 +202,7 @@ def count_clients() -> int:
 def get_client_deals(client_email: str) -> list:
     """Devolve todos os deals de um cliente pelo email."""
     try:
-        res = (_get_client().table("deals")
+        res = (_get_client().table(TBL_DEALS)
                .select("deal_id,created_at,status,proposed_value,margin_pct,products,updated_at")
                .ilike("client_email", client_email)
                .order("created_at", desc=True)
@@ -184,20 +228,20 @@ def find_duplicates(
     _fields = "id,company_name,contact_name,contact_email,country,status,client_type"
 
     if email and email.strip():
-        res = db.table("clients").select(_fields).ilike("contact_email", email.strip()).execute()
+        res = db.table(TBL_CLIENTS).select(_fields).ilike("contact_email", email.strip()).execute()
         for r in (res.data or []):
             if r["id"] not in seen_ids:
                 results.append(r); seen_ids.add(r["id"])
 
     if company_name and company_name.strip():
-        res = (db.table("clients").select(_fields)
+        res = (db.table(TBL_CLIENTS).select(_fields)
                .ilike("company_name", f"%{company_name.strip()}%").limit(5).execute())
         for r in (res.data or []):
             if r["id"] not in seen_ids:
                 results.append(r); seen_ids.add(r["id"])
 
     if vat and vat.strip():
-        res = db.table("clients").select(_fields).eq("vat", vat.strip()).execute()
+        res = db.table(TBL_CLIENTS).select(_fields).eq("vat", vat.strip()).execute()
         for r in (res.data or []):
             if r["id"] not in seen_ids:
                 results.append(r); seen_ids.add(r["id"])
@@ -234,7 +278,7 @@ def upsert_from_deal(
         _fill("incoterm",      incoterm)
         _fill("payment_terms", payment)
         if len(updates) > 1:
-            _get_client().table("clients").update(updates).eq("id", existing["id"]).execute()
+            _get_client().table(TBL_CLIENTS).update(updates).eq("id", existing["id"]).execute()
         return str(existing["id"]), False
     else:
         cid = add_client({
@@ -260,7 +304,7 @@ def sync_clients_from_deals() -> tuple[int, int]:
     Devolve (criados, já_existiam).
     """
     try:
-        res = _get_client().table("deals").select(
+        res = _get_client().table(TBL_DEALS).select(
             "client,company,client_email,country,incoterm,payment_conditions"
         ).execute()
         created = skipped = 0
@@ -314,7 +358,7 @@ def bulk_import_clients(rows: list[dict]) -> tuple[int, int, int]:
                     if row.get(field) and not existing.get(field):
                         patch[field] = row[field]
                 if len(patch) > 1:
-                    _get_client().table("clients").update(patch).eq("id", existing["id"]).execute()
+                    _get_client().table(TBL_CLIENTS).update(patch).eq("id", existing["id"]).execute()
                 updated += 1
             else:
                 row.setdefault("status", "Ativo")
@@ -325,7 +369,7 @@ def bulk_import_clients(rows: list[dict]) -> tuple[int, int, int]:
                 row.setdefault("categories", [])
                 now = datetime.now().strftime("%Y-%m-%d %H:%M")
                 row["created_at"] = row["updated_at"] = now
-                _get_client().table("clients").insert(row).execute()
+                _get_client().table(TBL_CLIENTS).insert(row).execute()
                 created += 1
         except Exception as e:
             print(f"[client_tracker] bulk_import erro: {e}")
@@ -387,7 +431,7 @@ def data_quality_report() -> dict:
     from collections import defaultdict
     from difflib import SequenceMatcher
 
-    clients = _get_client().table("clients").select("*").execute().data or []
+    clients = _get_client().table(TBL_CLIENTS).select("*").execute().data or []
 
     # 1. Domínios de email por empresa
     company_emails: dict[str, list] = defaultdict(list)
@@ -473,7 +517,7 @@ def fix_phone_add_code(client_id: str, phone: str, country: str) -> bool:
 
 def fix_all_phones() -> tuple[int, int]:
     """Aplica indicativo de país em todos os telefones que não o têm. Devolve (fixed, skipped)."""
-    clients = _get_client().table("clients").select(
+    clients = _get_client().table(TBL_CLIENTS).select(
         "id,contact_phone,country").execute().data or []
     fixed = skipped = 0
     for c in clients:
@@ -527,7 +571,7 @@ def merge_clients(primary_id: str, secondary_id: str) -> bool:
         update_client(primary_id, patch)
 
     try:
-        _get_client().table("clients").delete().eq("id", secondary_id).execute()
+        _get_client().table(TBL_CLIENTS).delete().eq("id", secondary_id).execute()
         return True
     except Exception as e:
         print(f"[client_tracker] merge_clients erro: {e}")
@@ -570,13 +614,13 @@ def get_contacts(client_id: str) -> list:
                 "notes":     "",
             }]
             # Persistir a migração
-            _get_client().table("clients").update({"contacts": contacts}).eq("id", client_id).execute()
+            _get_client().table(TBL_CLIENTS).update({"contacts": contacts}).eq("id", client_id).execute()
 
     # Garantir que há sempre um primary
     has_primary = any(c.get("primary") for c in contacts)
     if contacts and not has_primary:
         contacts[0]["primary"] = True
-        _get_client().table("clients").update({"contacts": contacts}).eq("id", client_id).execute()
+        _get_client().table(TBL_CLIENTS).update({"contacts": contacts}).eq("id", client_id).execute()
 
     return contacts
 
@@ -609,7 +653,7 @@ def save_contacts(client_id: str, contacts: list) -> bool:
         "updated_at":       datetime.now().strftime("%Y-%m-%d %H:%M"),
     }
     try:
-        _get_client().table("clients").update(patch).eq("id", client_id).execute()
+        _get_client().table(TBL_CLIENTS).update(patch).eq("id", client_id).execute()
         return True
     except Exception as e:
         print(f"[client_tracker] save_contacts erro: {e}")
@@ -639,7 +683,7 @@ def enrich_brands_from_deals(client_email: str) -> dict:
 
     # Buscar deals com sku_ids
     try:
-        res = (_get_client().table("deals")
+        res = (_get_client().table(TBL_DEALS)
                .select("sku_ids")
                .ilike("client_email", client_email)
                .execute())
@@ -689,7 +733,7 @@ def auto_enrich_clients() -> dict:
     - currency default EUR
     Devolve {"updated": int, "unchanged": int}.
     """
-    clients = _get_client().table("clients").select("*").execute().data or []
+    clients = _get_client().table(TBL_CLIENTS).select("*").execute().data or []
     updated = unchanged = 0
     for c in clients:
         patch: dict = {}
@@ -732,7 +776,7 @@ def get_client_kpis(client_email: str) -> dict:
              active_deals, last_deal_date, active_pipeline_value.
     """
     try:
-        res = (_get_client().table("deals")
+        res = (_get_client().table(TBL_DEALS)
                .select("deal_id,created_at,status,proposed_value,margin_pct")
                .ilike("client_email", client_email)
                .execute())
@@ -809,7 +853,7 @@ def smart_segment(
     categories = [c.upper() for c in (categories or [])]
 
     try:
-        q = _get_client().table("clients").select(
+        q = _get_client().table(TBL_CLIENTS).select(
             "id,company_name,country,market,contact_name,contact_email,"
             "client_type,status,brands,categories,incoterm,payment_terms,notes"
         )
@@ -826,7 +870,7 @@ def smart_segment(
     # Actividade por email (1 query para todos)
     deal_counts: dict = {}
     try:
-        res_d = _get_client().table("deals").select("client_email").execute()
+        res_d = _get_client().table(TBL_DEALS).select("client_email").execute()
         for row in (res_d.data or []):
             em = (row.get("client_email") or "").lower().strip()
             if em:

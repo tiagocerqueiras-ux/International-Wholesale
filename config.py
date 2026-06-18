@@ -61,6 +61,17 @@ CLAUDE_MODEL      = "claude-sonnet-4-6"
 SUPABASE_URL = _get_secret("SUPABASE_URL")
 SUPABASE_KEY = _get_secret("SUPABASE_KEY")
 
+# ── MODO DE TESTE (opt-in) ───────────────────────────────────────────────────
+# PRODUÇÃO: default "0" → tabelas reais (clients/deals/suppliers), login real,
+# emails reais. Só entra em modo de teste se o secret/env TEST_MODE="1" for
+# definido explicitamente (ex.: a sandbox cotacao_agent_TESTE).
+TEST_MODE      = _get_secret("TEST_MODE", "0") == "1"
+TABLE_PREFIX   = "test_" if TEST_MODE else ""
+TBL_CLIENTS    = f"{TABLE_PREFIX}clients"
+TBL_DEALS      = f"{TABLE_PREFIX}deals"
+TBL_SUPPLIERS  = f"{TABLE_PREFIX}suppliers"
+EMAIL_DISABLED = TEST_MODE   # em teste: grava emails em disco em vez de enviar
+
 # ── Email (Resend API) ─────────────────────────────────────────────────────────
 RESEND_API_KEY  = _get_secret("RESEND_API_KEY", "")
 SENDER_EMAIL    = _get_secret("SMTP_EMAIL", "tiago.cerqueira@transglobalchain.com")
