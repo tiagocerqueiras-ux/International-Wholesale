@@ -4556,7 +4556,8 @@ elif page == "📦  Adjudicadas":
             if _pal:
                 _total_pal += _pal
             _lines.append({"sku": sku, "ean": data.get("ean"), "name": data.get("name"),
-                           "qty": qty, "price": item.get("pvp"), "upp": _upp or None, "pallets": _pal})
+                           "qty": qty, "price": item.get("pvp"), "pcl": data.get("pcl"),
+                           "upp": _upp or None, "pallets": _pal})
         st.metric("Total de paletes", _total_pal)
 
         st.subheader("2. Entrega e transporte")
@@ -4584,7 +4585,8 @@ elif page == "📦  Adjudicadas":
         if _b.button("📧 Gerar layouts Admin/Stocks", use_container_width=True):
             _admin, _stocks = layouts.build_layouts(
                 deal.get("Deal ID"), client, _deliv, _lines, deal.get("Incoterm"),
-                _transport, include_pallets=_incl, total_pallets=_total_pal)
+                _transport, include_pallets=_incl, total_pallets=_total_pal,
+                payment=deal.get("Pagamento"))
             _od = _Path(__file__).parent / "emails_out"
             _od.mkdir(exist_ok=True)
             (_od / f"{deal.get('Deal ID')}_admin.html").write_text(_admin, encoding="utf-8")
