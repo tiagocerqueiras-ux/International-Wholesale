@@ -30,6 +30,7 @@ from config import (
 from sku_lookup import lookup_skus, search_by_name, build_cache
 from deal_tracker import add_deal, update_status, update_margin, update_deal_prices, duplicate_deal, delete_deal, list_deals, get_deal, deal_products_table, get_sku_price_history, update_deal_operational, get_pipeline_stats, get_executive_dashboard_data
 from email_generator import generate_proposal, generate_followup, save_email_html, generate_closing_emails, generate_supplier_request, generate_expedition_confirmation, generate_transport_request
+from proforma import generate_proforma
 from email_sender import create_draft, build_subject
 from client_tracker import (
     add_client, update_client, get_client, get_client_by_email, find_client,
@@ -807,6 +808,7 @@ if page == "🆕  Nova Cotação":
 
         qty_map = {}
         any_nd  = False
+        _cargo_value = 0.0   # valor da mercadoria (Σ preço cliente × qtd) — base do seguro
 
         for sku, d in list(basket.items()):
             ufc_raw   = d.get("ufc_raw")
@@ -861,6 +863,7 @@ if page == "🆕  Nova Cotação":
             st.session_state["margin_override"][sku] = _m_line
 
             pvp = calc_pvp(fc_final, s_margin_mode, _m_line)
+            _cargo_value += (pvp or 0) * qty_map.get(sku, 1)
 
             # Calcular margem real da linha para alerta visual
             _line_margin_pct = margin_pct(fc_final, pvp) if (fc_final and pvp) else 0.0
@@ -1013,9 +1016,13 @@ if page == "🆕  Nova Cotação":
                     _zone = _cps[0]
             if _sim_ctry and _zone:
                 _qs = get_quote(c_cp=f"{_sim_ctry}{_zone}", n_pallets=int(_tpal),
-                                cargo_value=0.0, include_insurance=False, cache=_tcache)
+                                cargo_value=float(_cargo_value), include_insurance=True, cache=_tcache)
                 if _qs:
-                    _best = min(_qs, key=lambda x: x["total"])
+                    # Seguro é obrigatório → escolher a mais barata QUE INCLUI seguro
+                    # (a SCHENKER não oferece; só entra se mais nenhuma estiver disponível)
+                    _insured = [q for q in _qs if q.get("ins_label") != "Nao disponivel"]
+                    _pool = _insured or _qs
+                    _best = min(_pool, key=lambda x: x["total"])
                     _auto_fr = round(float(_best["total"]), 2)
                     st.session_state["nc_carrier"] = _best["carrier"]
                     # auto-preenche o frete sempre que a cotação automática muda (mantém edição manual entretanto)
@@ -1023,20 +1030,23 @@ if page == "🆕  Nova Cotação":
                     if st.session_state.get("_nc_auto_sig") != _sig:
                         st.session_state["nc_freight"] = _auto_fr
                         st.session_state["_nc_auto_sig"] = _sig
-                    st.success(f"✅ Transporte automático: **{_best['carrier']}** · {_auto_fr:,.2f} € "
-                               f"({int(_tpal)} palete(s) · {_sim_ctry} zona {_zone})")
+                    _ins_txt = (f" · inclui seguro {_best['insurance']:.2f} €" if _best.get("insurance")
+                                else (" · seguro incluído no frete" if _best.get("ins_label") == "Incluido no frete" else ""))
+                    st.success(f"✅ Transporte automático (c/ seguro): **{_best['carrier']}** · {_auto_fr:,.2f} € "
+                               f"({int(_tpal)} palete(s) · {_sim_ctry} zona {_zone}{_ins_txt})")
+                    st.caption(f"Valor da mercadoria (base do seguro): {_cargo_value:,.2f} €")
                     with st.expander("Ver todas as transportadoras"):
                         for _r in sorted(_qs, key=lambda x: x["total"]):
-                            st.caption(f"{_r['carrier']}: {_r['total']:,.2f} €"
+                            st.caption(f"{_r['carrier']}: {_r['total']:,.2f} € · seguro {_r.get('ins_label') or '—'}"
                                        + (f" · {_r.get('tt_days')}d" if _r.get('tt_days') else ""))
                 else:
                     st.warning(f"Sem cotações de transporte para {_sim_ctry} zona {_zone} · {int(_tpal)} palete(s).")
             else:
                 st.caption("⚠️ Indica **País** e **Código Postal** válidos para o transporte automático.")
 
-        freight_cost = st.number_input("🚚 Custo de transporte (€)", min_value=0.0,
+        freight_cost = st.number_input("🚚 Custo de transporte + seguro (€)", min_value=0.0,
                                        step=50.0, format="%.2f", key="nc_freight",
-                                       help="Calculado a partir da morada de entrega + paletes. Podes ajustar.")
+                                       help="Custo de exportação = frete + combustível + seguro (calculado sobre o valor da mercadoria). Calculado a partir da morada + paletes. Podes ajustar.")
 
         # ── 5. Resumo financeiro ──────────────────────────────────────────────
         st.markdown("---")
@@ -2050,6 +2060,34 @@ elif page == "📋  Deals em Curso":
                                 except Exception as e:
                                     st.error(f"Erro ao gerar proposta: {e}")
                                     import traceback; st.code(traceback.format_exc())
+
+                    # ── Proforma Invoice ───────────────────────────────────────
+                    st.markdown("---")
+                    st.markdown("**📄 Proforma Invoice**")
+                    _pf_col1, _pf_col2 = st.columns([4, 1])
+                    _pf_col1.caption(
+                        "Gera automaticamente uma Proforma Invoice em Excel com os dados do deal, "
+                        "cliente, linhas de produto, totais, condições comerciais e dados bancários."
+                    )
+                    _pf_col2.markdown("<br>", unsafe_allow_html=True)
+                    try:
+                        _pf_client = get_client(deal.get("client_id") or "") or {}
+                        if not _pf_client:
+                            # fallback: tentar pelo email do deal
+                            _pf_client = get_client_by_email(str(deal.get("Email Cliente","") or "")) or {}
+                        _pf_bytes = generate_proforma(deal, _pf_client)
+                        _pf_fname = f"Proforma_{did}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+                        _pf_col2.download_button(
+                            "⬇️ Download",
+                            data=_pf_bytes,
+                            file_name=_pf_fname,
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key=f"pf_dl_{did}",
+                            type="primary",
+                            use_container_width=True,
+                        )
+                    except Exception as _pf_err:
+                        _pf_col2.error(f"Erro: {_pf_err}")
 
                     # ── Follow-up (só se deal em status activo) ────────────────
                     if status in ("Lead", "Pedido de Cotação", "Rascunho", "Enviado", "Em Negociação", "Follow-up"):
