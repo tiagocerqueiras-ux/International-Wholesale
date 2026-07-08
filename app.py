@@ -4508,7 +4508,10 @@ elif page == "⚙️  Administração":
                     ok = update_user(uid, {
                         "name": new_name, "role": new_role, "is_active": new_active
                     })
-                    st.success("✅ Guardado.") if ok else st.error("Erro.")
+                    if ok:
+                        st.success("✅ Guardado.")
+                    else:
+                        st.error("Erro.")
                     st.rerun()
 
                 st.markdown("---")
@@ -4524,7 +4527,10 @@ elif page == "⚙️  Administração":
                         st.error("As passwords não coincidem.")
                     else:
                         ok = reset_password(uid, new_pwd)
-                        st.success("✅ Password alterada.") if ok else st.error("Erro.")
+                        if ok:
+                            st.success("✅ Password alterada.")
+                        else:
+                            st.error("Erro ao alterar a password.")
 
     with tab_new_user:
         st.subheader("Criar Novo Utilizador")
@@ -4617,7 +4623,10 @@ elif page == "📦  Adjudicadas":
                     "deal_id": deal.get("Deal ID"), "client": deal.get("Cliente"),
                     "status": deal.get("Status"), "created_at": deal.get("Data Criação"),
                     "skus_detail": sd})
-            (st.success if _n else st.error)(_msg)
+            if _n:
+                st.success(_msg)
+            else:
+                st.error(_msg)
 
         _incl = _b.checkbox("Incluir qtd/palete nos layouts", value=True)
         if _b.button("📧 Gerar layouts Admin/Stocks", use_container_width=True):
