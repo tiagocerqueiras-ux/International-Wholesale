@@ -17,6 +17,7 @@ Uso:  py build_bm_snapshot.py [--deep-info]
 """
 import sys
 import json
+import subprocess
 import warnings
 from pathlib import Path
 
@@ -37,6 +38,27 @@ FILES = [
 OUT = Path(__file__).parent / "data" / "bm_deals_snapshot.json"
 SNAP_FIELDS = ("client", "brand", "cat", "sku", "revenue", "mg_eur", "mg_pct",
                "year", "month", "status")
+
+
+def _git(*args):
+    return subprocess.run(["git", *args], cwd=str(Path(__file__).parent),
+                          capture_output=True, text=True)
+
+
+def _commit_push(nrows: int) -> None:
+    """Commita + faz push do snapshot APENAS se mudou (evita redeploys inúteis)."""
+    rel = "data/bm_deals_snapshot.json"
+    if _git("diff", "--quiet", "--", rel).returncode == 0:
+        print("Snapshot igual ao commitado — sem commit/push.")
+        return
+    if _git("add", rel).returncode != 0:
+        print("git add falhou."); return
+    c = _git("commit", "-m", f"Auto: atualiza snapshot BoxMovers ({nrows} linhas)")
+    if c.returncode != 0:
+        print("git commit:", (c.stdout + c.stderr).strip()); return
+    p = _git("push", "origin", "main")
+    print("Publicado (Railway redeploya)." if p.returncode == 0
+          else f"git push falhou: {p.stderr.strip()}")
 
 
 def main():
@@ -73,6 +95,9 @@ def main():
     print("Concluídos (CONCLUÍDO+PO):", len(concl))
     for y in sorted(rev_by_year):
         print(f"  receita {y}: {rev_by_year[y]:,.0f} EUR".replace(",", " "))
+
+    if "--push" in sys.argv:
+        _commit_push(len(snap))
 
 
 if __name__ == "__main__":
