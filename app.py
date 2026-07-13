@@ -445,7 +445,8 @@ if page == "🆕  Nova Cotação":
     country  = c3.text_input("País *", key="nc_country", placeholder="Ex: Bulgaria")
     c4, c5 = st.columns([3, 1])
     email    = c4.text_input("Email do cliente *", key="nc_email", placeholder="Ex: contact@geppit.eu")
-    language = c5.selectbox("Língua", ["EN", "PT", "ES", "FR"])
+    language = c5.selectbox("Língua", ["EN", "PT", "ES", "FR"], key="nc_language",
+                            help="Língua da proposta/emails. Podes alterar depois em Deals em Curso.")
 
     # ── Estado do cliente (BD / CRM por email / novo) ─────────────────────────
     if st.session_state.get("nc_client_id"):
@@ -1877,6 +1878,22 @@ elif page == "📋  Deals em Curso":
                     h3.markdown(f"**Língua**  \n{deal.get('Língua','—')}")
                     h4.markdown(f"**Margem**  \n{deal.get('Margem %','—')}")
                     h5.markdown(f"**Última atualização**  \n{upd}")
+
+                    # ── Alterar língua da proposta (afeta emails/documentos gerados) ──
+                    _lang_opts = ["EN", "PT", "ES", "FR"]
+                    _cur_lang  = str(deal.get("Língua", "EN") or "EN").upper()
+                    _lgc1, _lgc2 = st.columns([1, 3])
+                    _new_lang = _lgc1.selectbox(
+                        "🌐 Língua da proposta", _lang_opts,
+                        index=_lang_opts.index(_cur_lang) if _cur_lang in _lang_opts else 0,
+                        key=f"lang_{did}")
+                    if _new_lang != _cur_lang:
+                        if _lgc2.button(f"💾 Alterar para {_new_lang}", key=f"savelang_{did}"):
+                            if update_deal_operational(did, language=_new_lang):
+                                st.success(f"✅ Língua alterada para {_new_lang}.")
+                                st.rerun()
+                            else:
+                                st.error("Erro ao alterar a língua.")
 
                     # ── Condições comerciais ────────────────────────────────────
                     st.markdown("**Condições Comerciais**")

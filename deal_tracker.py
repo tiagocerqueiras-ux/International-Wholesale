@@ -266,6 +266,7 @@ def update_deal_operational(
     cmr_number: str = None,
     packing_list: str = None,
     supplier_ids: str = None,
+    language: str = None,
 ) -> bool:
     """Atualiza campos operacionais/logísticos de um deal."""
     try:
@@ -280,6 +281,7 @@ def update_deal_operational(
         if cmr_number        is not None: upd["cmr_number"]         = cmr_number
         if packing_list      is not None: upd["packing_list"]       = packing_list
         if supplier_ids      is not None: upd["supplier_ids"]       = supplier_ids
+        if language          is not None: upd["language"]           = str(language).upper()
         _get_client().table(TBL_DEALS).update(upd).eq("deal_id", deal_id).execute()
         return True
     except Exception as e:
