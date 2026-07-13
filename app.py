@@ -829,6 +829,9 @@ if page == "🆕  Nova Cotação":
             cols[1].markdown(f"**`{sku}`**")
             cols[2].markdown(f"`{ean}`")
             cols[3].markdown(f"{d.get('brand','')[:12]} · {d.get('name','')[:35]}")
+            _pvp_online = d.get("pvp_pt")
+            if _pvp_online:
+                cols[3].caption(f"🔖 PVP online (ref. interna): {_pvp_online:.2f} €")
 
             # FC_sim depende do destino (vat_rate vem da secção 2)
             # Para exportação, deduz EIS do PCL (taxa não aplicável fora de PT)

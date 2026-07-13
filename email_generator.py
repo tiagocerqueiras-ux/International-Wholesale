@@ -170,7 +170,6 @@ def _build_product_table_html(skus_data: dict, language: str = "EN") -> str:
         + _th(_t(language, "col_sku"))
         + _th(_t(language, "col_product"), left=True)
         + _th(_t(language, "col_brand"))
-        + _th(_t(language, "col_pvp_pt"))
         + _th(_t(language, "col_unit_price"))
         + _th(_t(language, "col_qty"))
         + _th(_t(language, "col_total"))
@@ -185,8 +184,6 @@ def _build_product_table_html(skus_data: dict, language: str = "EN") -> str:
         ean      = _html.escape(str(d.get("ean") or "N/A"))
         name     = _html.escape(str(d.get("name") or sku))
         brand    = _html.escape(str(d.get("brand") or "N/A"))
-        pvp_pt = d.get("pvp_pt")
-        pvp_pt_str = f"{pvp_pt:.2f}" if pvp_pt is not None else "N/A"
         total  = round(pvp * qty, 2)
 
         _bg   = '#fdeaea' if i % 2 == 1 else '#ffffff'
@@ -201,7 +198,6 @@ def _build_product_table_html(skus_data: dict, language: str = "EN") -> str:
             f'<td style="{_td}">{sku_safe}</td>'
             f'<td style="{_tdl}">{name}</td>'
             f'<td style="{_td}">{brand}</td>'
-            f'<td style="{_td}">{pvp_pt_str}</td>'
             f'<td style="{_td}">{pvp:.2f}</td>'
             f'<td style="{_td}">{qty}</td>'
             f'<td style="{_tdb}">{total:,.2f}</td>'
@@ -234,14 +230,12 @@ def _build_products_context(skus_data: dict, language: str = "EN") -> tuple[str,
         ean      = d.get("ean") or "N/A"
         name     = d.get("name", sku)[:70]
         brand    = d.get("brand") or "N/A"
-        pvp_pt   = d.get("pvp_pt")
         eis_da   = d.get("eis_da") or 0.0
 
-        pvp_pt_str = f"{pvp_pt:.2f}" if pvp_pt is not None else "N/A"
         total      = round(pvp * qty, 2)
 
         rows.append(
-            f"| {ean} | {sku} | {name} | {brand} | {pvp_pt_str} | {pvp:.2f} | {qty} | {total:.2f} |"
+            f"| {ean} | {sku} | {name} | {brand} | {pvp:.2f} | {qty} | {total:.2f} |"
         )
 
         # EIS, Sell-In e Sell-Out são informação interna — não expor ao cliente
