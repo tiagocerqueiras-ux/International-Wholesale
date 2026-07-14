@@ -1188,21 +1188,24 @@ if page == "🆕  Nova Cotação":
             _fc_final = round(_fc_sim - _so_neg, 4)
             _m_sku    = _mg_override.get(_sk, s_margin_val)
             _pvp_un   = _eff_pvp(_sk, _fc_final)
+            _pf_ov    = float(st.session_state.get(f"pf_{_sk}", 0.0) or 0.0)
             _qty      = qty_map.get(_sk, 1)
             _basket_rows.append({
-                "Qty":           _qty,
-                "SKU":           _sk,
-                "EAN":           _d.get("ean", ""),
-                "Marca":         _d.get("brand", ""),
-                "Produto":       _d.get("name", ""),
-                "FC_Simulador":  _fc_sim,
-                "SO_Negociado":  _so_neg,
-                "FC_Final":      _fc_final,
-                "Margem":        _m_sku,
-                "Margem_Modo":   "%" if s_margin_mode == "Percentagem (%)" else "€/un.",
-                "Preco_Cliente": _pvp_un,
-                "EIS_DA":        _d.get("eis_da") or 0,
-                "Sell_In":       _d.get("sell_in") or "",
+                # ── Colunas RE-IMPORTÁVEIS (nomes reconhecidos pelo importador) ──
+                "Referência":          _sk,
+                "EAN":                 _d.get("ean", ""),
+                "Marca":               _d.get("brand", ""),
+                "Produto":             _d.get("name", ""),
+                "Quantidade":          _qty,
+                "Apoio (€)":           _so_neg,
+                "Margem (%)":          _m_sku,
+                "Preço final (€)":     round(_pf_ov, 2) if _pf_ov > 0 else "",
+                # ── Colunas de REFERÊNCIA (ignoradas na importação) ──
+                "FC Simulador (€)":    _fc_sim,
+                "FC Final (€)":        _fc_final,
+                "Preço calculado (€)": round(_pvp_un, 4),
+                "EIS DA":              _d.get("eis_da") or 0,
+                "Sell-In":             _d.get("sell_in") or "",
             })
         _df_basket = _pd_bx.DataFrame(_basket_rows)
         _ts_b = datetime.now().strftime("%Y%m%d_%H%M")
