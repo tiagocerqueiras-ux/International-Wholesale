@@ -1217,6 +1217,8 @@ if page == "🆕  Nova Cotação":
             _pf_ov    = float(st.session_state.get(f"pf_{_sk}", 0.0) or 0.0)
             _h_ph     = _combined_last(_sk)
             _qty      = qty_map.get(_sk, 1)
+            _valor    = round((_pvp_un or 0) * _qty, 2)
+            _mg_efet  = round(margin_pct(_fc_final, _pvp_un), 1) if (_fc_final and _pvp_un) else 0.0
             _basket_rows.append({
                 # ── Colunas RE-IMPORTÁVEIS (nomes reconhecidos pelo importador) ──
                 "Referência":          _sk,
@@ -1227,15 +1229,22 @@ if page == "🆕  Nova Cotação":
                 "Apoio (€)":           _so_neg,
                 "Margem (%)":          _m_sku,
                 "Preço final (€)":     round(_pf_ov, 2) if _pf_ov > 0 else "",
-                # ── Colunas de REFERÊNCIA (ignoradas na importação) ──
+                # ── Colunas CALCULADAS / REFERÊNCIA (ignoradas na importação) ──
+                "Preço unitário (€)":     round(_pvp_un, 4),
+                "Valor linha (€)":        _valor,
+                "Margem efetiva (%)":     _mg_efet,
+                "PVP online (€)":         round(_d.get("pvp_pt"), 2) if _d.get("pvp_pt") else "",
                 "Últ. preço cliente (€)": round(_h_ph["price"], 4) if (_h_ph and _h_ph.get("price")) else "",
                 "Data últ. compra":       _h_ph["date"] if _h_ph else "",
                 "Nº compras (cliente)":   _h_ph["n"] if _h_ph else "",
-                "FC Simulador (€)":    _fc_sim,
-                "FC Final (€)":        _fc_final,
-                "Preço calculado (€)": round(_pvp_un, 4),
-                "EIS DA":              _d.get("eis_da") or 0,
-                "Sell-In":             _d.get("sell_in") or "",
+                "Stock total":            int(_d["stock"]) if _d.get("stock") is not None else "",
+                "Stock 701":              int(_d.get("stock_701") or 0),
+                "Stock 708":              int(_d.get("stock_708") or 0),
+                "Stock 2928":             int(_d.get("stock_2928") or 0),
+                "FC Simulador (€)":       _fc_sim,
+                "FC Final (€)":           _fc_final,
+                "EIS DA":                 _d.get("eis_da") or 0,
+                "Sell-In":                _d.get("sell_in") or "",
             })
         _df_basket = _pd_bx.DataFrame(_basket_rows)
         _ts_b = datetime.now().strftime("%Y%m%d_%H%M")
@@ -1248,9 +1257,22 @@ if page == "🆕  Nova Cotação":
             use_container_width=True,
             key="dl_basket_csv",
         )
+        _df_resumo = _pd_bx.DataFrame([
+            ("Cliente", client),
+            ("Nº SKUs", len(basket)),
+            ("Total unidades", int(sum(qty_map.get(s, 1) for s in basket))),
+            ("Subtotal produtos (€)", round(total_pvp, 2)),
+            ("Transporte + seguro (€)", round(freight_cost, 2)),
+            ("IVA (€)", round(vat_amount, 2)),
+            ("TOTAL (€)", round(total_client, 2)),
+            ("Margem global (%)", round(overall_margin, 1)),
+            ("Incoterm", s_incoterm),
+            ("Pagamento", s_payment),
+        ], columns=["Campo", "Valor"])
         _xlsx_bb = _io_bx.BytesIO()
         with _pd_bx.ExcelWriter(_xlsx_bb, engine="openpyxl") as _wr:
             _df_basket.to_excel(_wr, sheet_name="Cesto", index=False)
+            _df_resumo.to_excel(_wr, sheet_name="Resumo", index=False)
         _bx_exp2.download_button(
             "⬇️ Exportar XLSX",
             data=_xlsx_bb.getvalue(),
