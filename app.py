@@ -867,6 +867,20 @@ if page == "🆕  Nova Cotação":
         any_nd  = False
         _cargo_value = 0.0   # valor da mercadoria (Σ preço cliente × qtd) — base do seguro
         import purchase_history as _phist   # histórico de compras (African Markets)
+        from deal_tracker import get_client_sku_prices as _gcsp
+        # Última compra por SKU deste cliente: snapshot AM + deals confirmados/faturados na app
+        _deal_prices = _gcsp(client) if client else {}
+
+        def _combined_last(_s):
+            _snap = _phist.last_purchase(client, _s) if client else None
+            _dl   = _deal_prices.get(_s)
+            _cands = [x for x in (_snap, _dl) if x and x.get("price") is not None]
+            if not _cands:
+                return None
+            _best = max(_cands, key=lambda x: x.get("date", "") or "")
+            _n = (_snap.get("n") if _snap else 0) + (1 if _dl else 0)
+            return {"price": _best["price"], "date": _best.get("date", ""),
+                    "n": _n, "status": _best.get("status", "")}
 
         for sku, d in list(basket.items()):
             ufc_raw   = d.get("ufc_raw")
@@ -894,7 +908,7 @@ if page == "🆕  Nova Cotação":
                 cols[3].caption(
                     f"📦 Stock: {int(_st_tot)} · 701:{int(d.get('stock_701') or 0)}"
                     f" · 708:{int(d.get('stock_708') or 0)} · 2928:{int(d.get('stock_2928') or 0)}")
-            _hist = _phist.last_purchase(client, sku) if client else None
+            _hist = _combined_last(sku)
             if _hist and _hist.get("price"):
                 cols[3].caption(
                     f"🧾 Últ. compra ({client[:18]}): {_hist['price']:.2f} € · "
@@ -1201,7 +1215,7 @@ if page == "🆕  Nova Cotação":
             _m_sku    = _mg_override.get(_sk, s_margin_val)
             _pvp_un   = _eff_pvp(_sk, _fc_final)
             _pf_ov    = float(st.session_state.get(f"pf_{_sk}", 0.0) or 0.0)
-            _h_ph     = _phist.last_purchase(client, _sk) if client else None
+            _h_ph     = _combined_last(_sk)
             _qty      = qty_map.get(_sk, 1)
             _basket_rows.append({
                 # ── Colunas RE-IMPORTÁVEIS (nomes reconhecidos pelo importador) ──

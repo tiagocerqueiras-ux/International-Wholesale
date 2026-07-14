@@ -289,6 +289,56 @@ def update_deal_operational(
         return False
 
 
+# Estados que representam uma compra efetiva (confirmada em diante)
+_PURCHASE_STATUSES = ("Encomenda Confirmada", "Em Preparação", "Expedido", "Entregue", "Faturado")
+
+
+def get_client_sku_prices(client: str, statuses=_PURCHASE_STATUSES) -> dict:
+    """Última compra por SKU deste cliente nos deals confirmados/faturados.
+    Devolve {sku: {"price", "date", "status", "deal_id"}} (preço unitário do skus_detail)."""
+    if not client:
+        return {}
+    try:
+        res = (_get_client().table(TBL_DEALS)
+               .select("deal_id,client,company,status,created_at,order_date,skus_detail")
+               .in_("status", list(statuses))
+               .execute())
+        rows = res.data or []
+    except Exception as e:
+        print(f"[deal_tracker] get_client_sku_prices erro: {e}")
+        return {}
+    try:
+        from purchase_history import norm as _norm
+    except Exception:
+        def _norm(s):
+            return str(s or "").strip().upper()
+    cn = _norm(client)
+    out: dict = {}
+    for r in rows:
+        rc = _norm(r.get("client") or r.get("company") or "")
+        if not rc or not (rc == cn or (len(cn) >= 6 and (cn in rc or rc in cn))):
+            continue
+        date = str(r.get("order_date") or r.get("created_at") or "")[:10]
+        sd = r.get("skus_detail") or {}
+        if not isinstance(sd, dict):
+            continue
+        for sku, info in sd.items():
+            if not isinstance(info, dict):
+                continue
+            price = info.get("pvp")
+            if price is None:
+                continue
+            try:
+                price = float(price)
+            except (TypeError, ValueError):
+                continue
+            prev = out.get(sku)
+            if prev is None or date > prev.get("date", ""):
+                out[sku] = {"price": price, "date": date,
+                            "status": r.get("status", ""), "deal_id": r.get("deal_id")}
+    return out
+
+
 def get_pipeline_stats(salesperson_filter: str = None) -> dict:
     """
     Retorna estatísticas do pipeline agrupadas por status.
