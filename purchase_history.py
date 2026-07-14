@@ -31,13 +31,37 @@ def norm(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+# Palavras a ignorar no matching (formas jurídicas / genéricas)
+_STOP = {
+    "SA", "LDA", "LD", "LTD", "LTDA", "UNIPESSOAL", "SARL", "SL", "SRL", "EOOD",
+    "GMBH", "INC", "SPA", "LIMITADA", "E", "DE", "DO", "DA", "DOS", "DAS",
+    "COMERCIAL", "SOCIEDADE", "INTERNACIONAL", "COMERCIO", "IMPORTACAO",
+    "EXPORTACAO", "GROUP", "TECHNOLOGIE", "TECHNOLOGIES", "S",
+}
+
+
+def _tok(ncn: str) -> set:
+    """Tokens significativos de um nome já normalizado."""
+    return set(t for t in ncn.split() if t not in _STOP and len(t) >= 3)
+
+
 def _matches(cn: str, rcn: str) -> bool:
+    """cn e rcn já normalizados."""
     if not cn or not rcn:
         return False
     if cn == rcn:
         return True
-    # tolerância a truncagem/variantes — evita matches curtos demais
+    ta, tb = _tok(cn), _tok(rcn)
+    if ta and tb:
+        small, big = (ta, tb) if len(ta) <= len(tb) else (tb, ta)
+        if small.issubset(big):      # tokens do nome mais curto ⊆ do mais longo
+            return True
     return len(cn) >= 6 and (cn in rcn or rcn in cn)
+
+
+def name_matches(a, b) -> bool:
+    """Match de nomes de cliente (normaliza + tokens)."""
+    return _matches(norm(a), norm(b))
 
 
 def client_sku_history(client: str, sku: str) -> list:

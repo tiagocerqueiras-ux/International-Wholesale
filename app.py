@@ -869,12 +869,23 @@ if page == "🆕  Nova Cotação":
         _cargo_value = 0.0   # valor da mercadoria (Σ preço cliente × qtd) — base do seguro
         import purchase_history as _phist   # histórico de compras (African Markets)
         from deal_tracker import get_client_sku_prices as _gcsp
-        # Última compra por SKU deste cliente: snapshot AM + deals confirmados/faturados na app
-        _deal_prices = _gcsp(client) if client else {}
+        # Nomes a testar no histórico: "Nome do cliente" e "Empresa"
+        _hist_names = [n for n in (client, company) if n]
+        # Última compra por SKU: snapshot AM + deals confirmados/faturados na app
+        _deal_prices = {}
+        for _cn in _hist_names:
+            for _sk2, _v in _gcsp(_cn).items():
+                _pv = _deal_prices.get(_sk2)
+                if _pv is None or (_v.get("date", "") > _pv.get("date", "")):
+                    _deal_prices[_sk2] = _v
 
         def _combined_last(_s):
-            _snap = _phist.last_purchase(client, _s) if client else None
-            _dl   = _deal_prices.get(_s)
+            _snap = None
+            for _cn in _hist_names:
+                _c = _phist.last_purchase(_cn, _s)
+                if _c and (_snap is None or (_c.get("date", "") > _snap.get("date", ""))):
+                    _snap = _c
+            _dl = _deal_prices.get(_s)
             _cands = [x for x in (_snap, _dl) if x and x.get("price") is not None]
             if not _cands:
                 return None

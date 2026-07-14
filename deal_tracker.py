@@ -308,15 +308,14 @@ def get_client_sku_prices(client: str, statuses=_PURCHASE_STATUSES) -> dict:
         print(f"[deal_tracker] get_client_sku_prices erro: {e}")
         return {}
     try:
-        from purchase_history import norm as _norm
+        from purchase_history import name_matches as _nmatch
     except Exception:
-        def _norm(s):
-            return str(s or "").strip().upper()
-    cn = _norm(client)
+        def _nmatch(a, b):
+            return str(a or "").strip().upper() == str(b or "").strip().upper()
     out: dict = {}
     for r in rows:
-        rc = _norm(r.get("client") or r.get("company") or "")
-        if not rc or not (rc == cn or (len(cn) >= 6 and (cn in rc or rc in cn))):
+        rname = r.get("client") or r.get("company") or ""
+        if not _nmatch(client, rname):
             continue
         date = str(r.get("order_date") or r.get("created_at") or "")[:10]
         sd = r.get("skus_detail") or {}
