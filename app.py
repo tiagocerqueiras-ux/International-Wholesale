@@ -643,7 +643,7 @@ if page == "🆕  Nova Cotação":
     with st.expander("📥 Importar lista de produtos (CSV / TXT / XLSX)", expanded=False):
         st.caption(
             "Colunas aceites (XLSX/CSV): **Referência**/SKU ou **EAN** (obrigatória) e, opcionais, "
-            "**Quantidade**, **Apoio (€)**, **Margem (%)** e **Preço final (€)** (0/vazio = usar margem). "
+            "**Quantidade**, **Apoio (€)** e **Margem (%)** ou **Margem (€/un.)**. "
             "Sem cabeçalho reconhecido, usa a 1.ª coluna. TXT lê apenas códigos."
         )
         upl_basket = st.file_uploader(
@@ -661,9 +661,9 @@ if page == "🆕  Nova Cotação":
             import io as _io_tmpl
             from openpyxl import Workbook as _WB_tmpl
             _wbt = _WB_tmpl(); _wst = _wbt.active; _wst.title = "Proposta"
-            _wst.append(["Referência", "Quantidade", "Apoio (€)", "Margem (%)", "Preço final (€)"])
-            _wst.append(["8093098", 12, 0, 15, 0])
-            _wst.append(["8420642", 3, 0, 12, 24.90])
+            _wst.append(["Referência", "Quantidade", "Apoio (€)", "Margem (%)", "Margem (€/un.)"])
+            _wst.append(["8093098", 12, 0, 15, ""])
+            _wst.append(["8420642", 3, 0, 12, ""])
             _buft = _io_tmpl.BytesIO(); _wbt.save(_buft)
             st.download_button(
                 "⬇️ Descarregar template (XLSX)", _buft.getvalue(),
@@ -708,19 +708,22 @@ if page == "🆕  Nova Cotação":
                     _c_code = _pick(_cols, code_pref) or _cols[0]
                     _c_qty  = _pick(_cols, ("quantidade", "qtd", "qtd.", "qty", "quantity"))
                     _c_so   = _pick(_cols, ("apoio", "apoio (€)", "so", "so negoc", "so negoc. (€)", "sell-out", "sell out", "sellout"))
-                    _c_mg   = _pick(_cols, ("margem", "margem (%)", "margem %", "margin", "margin (%)",
-                                            "margem (€/un.)", "margem (€)", "margem valor"))
+                    _c_mg_pct = _pick(_cols, ("margem (%)", "margem %", "margin (%)", "margem", "margin"))
+                    _c_mg_eur = _pick(_cols, ("margem (€/un.)", "margem (€)", "margem valor"))
                     _c_pf   = _pick(_cols, ("preço final", "preco final", "preço final (€)", "preco final (€)",
-                                            "preço", "preco", "pvp final", "price"))
+                                            "pvp final", "price"))
                     for _, _r in _df.iterrows():
                         _code = str(_r.get(_c_code) or "").strip()
                         if not _code or _code.lower() == "nan":
                             continue
+                        _mgv = _num(_r.get(_c_mg_eur)) if _c_mg_eur else None
+                        if _mgv is None and _c_mg_pct:
+                            _mgv = _num(_r.get(_c_mg_pct))
                         imported.append({
                             "code": _code,
                             "qty":  _num(_r.get(_c_qty)) if _c_qty else None,
                             "so":   _num(_r.get(_c_so))  if _c_so  else None,
-                            "mg":   _num(_r.get(_c_mg))  if _c_mg  else None,
+                            "mg":   _mgv,
                             "pf":   _num(_r.get(_c_pf))  if _c_pf  else None,
                         })
             except Exception as e:
@@ -1217,49 +1220,45 @@ if page == "🆕  Nova Cotação":
         # ── Ações do cesto: Exportar CSV/XLSX + Limpar ────────────────────────
         _bx_exp1, _bx_exp2, _bx_exp3 = st.columns([2, 2, 2])
 
-        # ── Construir tabela do cesto ─────────────────────────────────────────
-        # CSV = valores calculados; XLSX = FÓRMULAS vivas (mudas margem/qtd/preço
-        # e recalcula no Excel) + coluna de desvio vs histórico + folha Resumo.
+        # ── Construir tabela do cesto (estrutura nova) ────────────────────────
+        # CSV = valores calculados; XLSX = FÓRMULAS vivas (mudas Qtd/Apoio/Margem
+        # e recalculam FC Final, Preço cliente e Desvios) + folha Resumo.
         import pandas as _pd_bx, io as _io_bx
         from openpyxl.utils import get_column_letter as _gcl
-        _mg_unit   = "%" if s_margin_mode == "Percentagem (%)" else "€/un."
-        _mg_header = f"Margem ({_mg_unit})"
-        _COLS = ["Referência", "EAN", "Marca", "Produto", "Quantidade", "Apoio (€)",
-                 _mg_header, "Preço final (€)", "FC Final (€)", "Preço unitário (€)",
-                 "Valor linha (€)", "Margem efetiva (%)", "Últ. preço cliente (€)",
-                 "Desvio vs hist. (%)", "Data últ. compra", "Nº compras (cliente)",
-                 "Stock total", "Stock 701", "Stock 708", "Stock 2928", "PVP online (€)",
-                 "FC Simulador (€)", "EIS DA", "Sell-In"]
+        _pct_mode = s_margin_mode == "Percentagem (%)"
+        _COLS = ["Referência", "EAN", "Marca", "Produto", "Quantidade", "FC (€)",
+                 "Apoio (€)", "FC Final (€)", "Margem (%)", "Margem (€/un.)",
+                 "PVP online s/ IVA (€)", "Preço cliente (€)", "Últ. preço venda cliente (€)",
+                 "Desvio (%)", "Desvio (€)", "Data última compra", "Nº compras",
+                 "Stock total", "Stock 701", "Stock 708", "Stock 2928"]
         _basket_rows = []
         for _sk, _d in basket.items():
             _so_neg   = so_manual_map.get(_sk, 0.0)
             _fc_sim   = _fc_sim_for(_d)
             _fc_final = round(_fc_sim - _so_neg, 4)
             _m_sku    = _mg_override.get(_sk, s_margin_val)
-            _pvp_un   = _eff_pvp(_sk, _fc_final)
-            _pf_ov    = float(st.session_state.get(f"pf_{_sk}", 0.0) or 0.0)
+            _pvp      = calc_pvp(_fc_final, s_margin_mode, _m_sku) or 0.0
             _h_ph     = _combined_last(_sk)
             _qty      = qty_map.get(_sk, 1)
             _last     = _h_ph["price"] if (_h_ph and _h_ph.get("price")) else None
-            _desvio   = round((_pvp_un / _last - 1) * 100, 1) if (_last and _pvp_un) else ""
+            _pvp_iva  = round(_d.get("pvp_pt") / 1.23, 2) if _d.get("pvp_pt") else ""
             _basket_rows.append({
                 "Referência": _sk, "EAN": _d.get("ean", ""), "Marca": _d.get("brand", ""),
-                "Produto": _d.get("name", ""), "Quantidade": _qty, "Apoio (€)": _so_neg,
-                _mg_header: _m_sku,
-                "Preço final (€)": round(_pf_ov, 2) if _pf_ov > 0 else "",
-                "FC Final (€)": _fc_final,
-                "Preço unitário (€)": round(_pvp_un, 4),
-                "Valor linha (€)": round((_pvp_un or 0) * _qty, 2),
-                "Margem efetiva (%)": round(margin_pct(_fc_final, _pvp_un), 1) if (_fc_final and _pvp_un) else 0.0,
-                "Últ. preço cliente (€)": round(_last, 4) if _last else "",
-                "Desvio vs hist. (%)": _desvio,
-                "Data últ. compra": _h_ph["date"] if _h_ph else "",
-                "Nº compras (cliente)": _h_ph["n"] if _h_ph else "",
+                "Produto": _d.get("name", ""), "Quantidade": _qty,
+                "FC (€)": _fc_sim, "Apoio (€)": _so_neg, "FC Final (€)": _fc_final,
+                "Margem (%)": _m_sku if _pct_mode else "",
+                "Margem (€/un.)": _m_sku if not _pct_mode else "",
+                "PVP online s/ IVA (€)": _pvp_iva,
+                "Preço cliente (€)": round(_pvp, 4),
+                "Últ. preço venda cliente (€)": round(_last, 4) if _last else "",
+                "Desvio (%)": round((_pvp / _last - 1) * 100, 1) if (_last and _pvp) else "",
+                "Desvio (€)": round(_pvp - _last, 2) if (_last and _pvp) else "",
+                "Data última compra": _h_ph["date"] if _h_ph else "",
+                "Nº compras": _h_ph["n"] if _h_ph else "",
                 "Stock total": int(_d["stock"]) if _d.get("stock") is not None else "",
-                "Stock 701": int(_d.get("stock_701") or 0), "Stock 708": int(_d.get("stock_708") or 0),
+                "Stock 701": int(_d.get("stock_701") or 0),
+                "Stock 708": int(_d.get("stock_708") or 0),
                 "Stock 2928": int(_d.get("stock_2928") or 0),
-                "PVP online (€)": round(_d.get("pvp_pt"), 2) if _d.get("pvp_pt") else "",
-                "FC Simulador (€)": _fc_sim, "EIS DA": _d.get("eis_da") or 0, "Sell-In": _d.get("sell_in") or "",
             })
         _df_basket = _pd_bx.DataFrame(_basket_rows, columns=_COLS)
         _ts_b = datetime.now().strftime("%Y%m%d_%H%M")
@@ -1286,20 +1285,17 @@ if page == "🆕  Nova Cotação":
         with _pd_bx.ExcelWriter(_xlsx_bb, engine="openpyxl") as _wr:
             _df_basket.to_excel(_wr, sheet_name="Cesto", index=False)
             _df_resumo.to_excel(_wr, sheet_name="Resumo", index=False)
-            # Fórmulas vivas na folha Cesto: recalcula ao mudar Margem/Qtd/Preço final
+            # Fórmulas vivas: FC Final, Preço cliente, Desvio % e Desvio €
             _ws = _wr.sheets["Cesto"]
             _L = {c: _gcl(i + 1) for i, c in enumerate(_COLS)}
-            _E, _G, _H = _L["Quantidade"], _L[_mg_header], _L["Preço final (€)"]
-            _I, _J, _K = _L["FC Final (€)"], _L["Preço unitário (€)"], _L["Valor linha (€)"]
-            _ME, _UP, _DV = _L["Margem efetiva (%)"], _L["Últ. preço cliente (€)"], _L["Desvio vs hist. (%)"]
+            _F, _G, _H = _L["FC (€)"], _L["Apoio (€)"], _L["FC Final (€)"]
+            _I, _J, _P = _L["Margem (%)"], _L["Margem (€/un.)"], _L["Preço cliente (€)"]
+            _M, _DP, _DE = _L["Últ. preço venda cliente (€)"], _L["Desvio (%)"], _L["Desvio (€)"]
             for _r in range(2, len(_basket_rows) + 2):
-                if s_margin_mode == "Percentagem (%)":
-                    _ws[f"{_J}{_r}"] = f"=IF({_H}{_r}>0,{_H}{_r},{_I}{_r}*(1+{_G}{_r}/100))"
-                else:
-                    _ws[f"{_J}{_r}"] = f"=IF({_H}{_r}>0,{_H}{_r},{_I}{_r}+{_G}{_r})"
-                _ws[f"{_K}{_r}"]  = f"={_J}{_r}*{_E}{_r}"
-                _ws[f"{_ME}{_r}"] = f"=IF({_I}{_r}>0,({_J}{_r}/{_I}{_r}-1)*100,0)"
-                _ws[f"{_DV}{_r}"] = f'=IF({_UP}{_r}>0,({_J}{_r}/{_UP}{_r}-1)*100,"")'
+                _ws[f"{_H}{_r}"] = f"={_F}{_r}-{_G}{_r}"
+                _ws[f"{_P}{_r}"] = f"=IF({_J}{_r}>0,{_H}{_r}+{_J}{_r},{_H}{_r}*(1+{_I}{_r}/100))"
+                _ws[f"{_DP}{_r}"] = f'=IF({_M}{_r}>0,({_P}{_r}/{_M}{_r}-1)*100,"")'
+                _ws[f"{_DE}{_r}"] = f'=IF({_M}{_r}>0,{_P}{_r}-{_M}{_r},"")'
         _bx_exp2.download_button(
             "⬇️ Exportar XLSX",
             data=_xlsx_bb.getvalue(),
