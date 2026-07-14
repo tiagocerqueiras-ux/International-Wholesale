@@ -643,8 +643,8 @@ if page == "🆕  Nova Cotação":
     with st.expander("📥 Importar lista de produtos (CSV / TXT / XLSX)", expanded=False):
         st.caption(
             "Colunas aceites (XLSX/CSV): **Referência**/SKU ou **EAN** (obrigatória) e, opcionais, "
-            "**Quantidade**, **Apoio (€)** e **Margem (%)**. Sem cabeçalho reconhecido, usa a 1.ª coluna. "
-            "TXT lê apenas códigos (separados por vírgula/espaço)."
+            "**Quantidade**, **Apoio (€)**, **Margem (%)** e **Preço final (€)** (0/vazio = usar margem). "
+            "Sem cabeçalho reconhecido, usa a 1.ª coluna. TXT lê apenas códigos."
         )
         upl_basket = st.file_uploader(
             "Ficheiro com SKUs ou EANs",
@@ -661,9 +661,9 @@ if page == "🆕  Nova Cotação":
             import io as _io_tmpl
             from openpyxl import Workbook as _WB_tmpl
             _wbt = _WB_tmpl(); _wst = _wbt.active; _wst.title = "Proposta"
-            _wst.append(["Referência", "Quantidade", "Apoio (€)", "Margem (%)"])
-            _wst.append(["8093098", 12, 0, 15])
-            _wst.append(["8420642", 3, 0, 12])
+            _wst.append(["Referência", "Quantidade", "Apoio (€)", "Margem (%)", "Preço final (€)"])
+            _wst.append(["8093098", 12, 0, 15, 0])
+            _wst.append(["8420642", 3, 0, 12, 24.90])
             _buft = _io_tmpl.BytesIO(); _wbt.save(_buft)
             st.download_button(
                 "⬇️ Descarregar template (XLSX)", _buft.getvalue(),
@@ -709,6 +709,8 @@ if page == "🆕  Nova Cotação":
                     _c_qty  = _pick(_cols, ("quantidade", "qtd", "qtd.", "qty", "quantity"))
                     _c_so   = _pick(_cols, ("apoio", "apoio (€)", "so", "so negoc", "so negoc. (€)", "sell-out", "sell out", "sellout"))
                     _c_mg   = _pick(_cols, ("margem", "margem (%)", "margem %", "margin", "margin (%)"))
+                    _c_pf   = _pick(_cols, ("preço final", "preco final", "preço final (€)", "preco final (€)",
+                                            "preço", "preco", "pvp final", "price"))
                     for _, _r in _df.iterrows():
                         _code = str(_r.get(_c_code) or "").strip()
                         if not _code or _code.lower() == "nan":
@@ -718,6 +720,7 @@ if page == "🆕  Nova Cotação":
                             "qty":  _num(_r.get(_c_qty)) if _c_qty else None,
                             "so":   _num(_r.get(_c_so))  if _c_so  else None,
                             "mg":   _num(_r.get(_c_mg))  if _c_mg  else None,
+                            "pf":   _num(_r.get(_c_pf))  if _c_pf  else None,
                         })
             except Exception as e:
                 st.error(f"Erro a ler ficheiro: {e}")
@@ -745,6 +748,8 @@ if page == "🆕  Nova Cotação":
                         st.session_state["so_manual"][_sid] = float(it["so"])
                     if it.get("mg") is not None:
                         st.session_state["margin_override"][_sid] = float(it["mg"])
+                    if it.get("pf") and it["pf"] > 0:
+                        st.session_state[f"pf_{_sid}"] = float(it["pf"])
                     _found_n += 1
 
                 if _found_n:
@@ -854,7 +859,7 @@ if page == "🆕  Nova Cotação":
         hcols = st.columns([0.8, 1.2, 1.5, 2.8, 1.4, 1.4, 1.4, 1.2, 1.6, 1.4, 1.4, 0.5])
         for col, lbl in zip(hcols, ["Qty","SKU","EAN","Produto",
                                      "FC Simulador","SO Negoc. (€)","FC Final",
-                                     f"Margem ({_unit})","Preço Cliente","EIS DA","Sell-In","✕"]):
+                                     f"Margem ({_unit})","Preço final (0=auto)","EIS DA","Sell-In","✕"]):
             col.caption(lbl)
         st.markdown("---")
 
@@ -913,39 +918,48 @@ if page == "🆕  Nova Cotação":
             # FC Final = FC_sim - SO_negociação
             fc_final = round(fc_sim - so_neg, 4) if fc_sim is not None else None
 
-            # Margem por linha — usa global como default, editável individualmente
-            _m_default = st.session_state["margin_override"].get(sku, s_margin_val)
-            _m_max = 200.0 if s_margin_mode == "Percentagem (%)" else 9999.0
-            _m_line = cols[7].number_input("", min_value=0.0, max_value=_m_max,
-                                           value=float(_m_default), step=0.5, format="%.1f",
-                                           key=f"mg_{sku}", label_visibility="collapsed",
-                                           help="Margem para este SKU (sobrepõe o global)")
-            st.session_state["margin_override"][sku] = _m_line
+            # Override de preço final por linha (0 = usar margem; >0 = preço fixo)
+            _ov_val = float(st.session_state.get(f"pf_{sku}", 0.0) or 0.0)
+            _has_ov = _ov_val > 0
+
+            # Margem por linha — editável, ou "fixo" quando há preço final imposto
+            if _has_ov:
+                cols[7].markdown("🔒 _fixo_")
+                _m_line = st.session_state["margin_override"].get(sku, s_margin_val)
+            else:
+                _m_default = st.session_state["margin_override"].get(sku, s_margin_val)
+                _m_max = 200.0 if s_margin_mode == "Percentagem (%)" else 9999.0
+                _m_line = cols[7].number_input("", min_value=0.0, max_value=_m_max,
+                                               value=float(_m_default), step=0.5, format="%.1f",
+                                               key=f"mg_{sku}", label_visibility="collapsed",
+                                               help="Margem para este SKU (sobrepõe o global)")
+                st.session_state["margin_override"][sku] = _m_line
 
             pvp = calc_pvp(fc_final, s_margin_mode, _m_line)
+            if _has_ov:
+                pvp = round(_ov_val, 4)   # preço final imposto (ignora margem/destino)
             _cargo_value += (pvp or 0) * qty_map.get(sku, 1)
 
-            # Calcular margem real da linha para alerta visual
+            # Margem real da linha (implícita quando preço fixo) + alerta
             _line_margin_pct = margin_pct(fc_final, pvp) if (fc_final and pvp) else 0.0
             _below_min = fc_final is not None and pvp is not None and _line_margin_pct < min_margin_pct
 
             cols[6].markdown(f"**{fmt4(fc_final)}**" if fc_final else "—")
 
-            # Preço Cliente — cor vermelha se abaixo da margem mínima
+            # Preço final: input de override (0 = usar margem) + preço efetivo/margem
+            cols[8].number_input("Preço final (€)", min_value=0.0, value=_ov_val,
+                                 step=1.0, format="%.2f", key=f"pf_{sku}",
+                                 label_visibility="collapsed",
+                                 help="0 = usar a margem · >0 = preço fixo (mostra a margem implícita)")
             if pvp:
-                if _below_min:
-                    cols[8].markdown(
-                        f'<span style="color:#CC0000;font-weight:700;">{fmt4(pvp)}</span>'
-                        f' <span title="Margem {_line_margin_pct:.1f}% abaixo do mínimo {min_margin_pct:.1f}%">⚠️</span>',
-                        unsafe_allow_html=True
-                    )
-                else:
-                    cols[8].markdown(
-                        f'<span style="color:#007700;font-weight:700;">{fmt4(pvp)}</span>',
-                        unsafe_allow_html=True
-                    )
-            else:
-                cols[8].markdown("—")
+                _clr = "#CC0000" if _below_min else "#007700"
+                _mrk = "🔒 " if _has_ov else ""
+                cols[8].markdown(
+                    f'{_mrk}<span style="color:{_clr};font-weight:700;">{fmt4(pvp)} €</span>'
+                    f' <span style="color:#888;font-size:11px;">({_line_margin_pct:.1f}%'
+                    f'{" ⚠️" if _below_min else ""})</span>',
+                    unsafe_allow_html=True
+                )
 
             # EIS: mostrar dedução se exportação, ou aviso se Portugal
             if eis_da > 0:
@@ -1119,13 +1133,20 @@ if page == "🆕  Nova Cotação":
             return round(raw + so, 4) if vat_rate > 0 else round(raw - eis + so, 4)
 
         _mg_override = st.session_state.get("margin_override", {})
+
+        def _eff_pvp(_s, _fcf):
+            """Preço/unidade: preço fixo (override pf_ > 0) senão cálculo por margem."""
+            _ov = float(st.session_state.get(f"pf_{_s}", 0.0) or 0.0)
+            if _ov > 0:
+                return round(_ov, 4)
+            return calc_pvp(_fcf, s_margin_mode, _mg_override.get(_s, s_margin_val)) or 0.0
+
         total_fc_final = sum(
             round(_fc_sim_for(basket[s]) - so_manual_map.get(s, 0), 4) * qty_map[s]
             for s in basket
         )
         total_pvp = sum(
-            (calc_pvp(round(_fc_sim_for(basket[s]) - so_manual_map.get(s, 0), 4),
-                      s_margin_mode, _mg_override.get(s, s_margin_val)) or 0) * qty_map[s]
+            _eff_pvp(s, round(_fc_sim_for(basket[s]) - so_manual_map.get(s, 0), 4)) * qty_map[s]
             for s in basket
         )
         overall_margin = margin_pct(total_fc_final, total_pvp) if total_pvp else 0
@@ -1166,7 +1187,7 @@ if page == "🆕  Nova Cotação":
             _fc_sim   = _fc_sim_for(_d)
             _fc_final = round(_fc_sim - _so_neg, 4)
             _m_sku    = _mg_override.get(_sk, s_margin_val)
-            _pvp_un   = calc_pvp(_fc_final, s_margin_mode, _m_sku)
+            _pvp_un   = _eff_pvp(_sk, _fc_final)
             _qty      = qty_map.get(_sk, 1)
             _basket_rows.append({
                 "Qty":           _qty,
@@ -1223,7 +1244,7 @@ if page == "🆕  Nova Cotação":
                 fc_sim    = _fc_sim_for(basket[sku])
                 fc_final  = round(fc_sim - so_neg, 4)
                 _m_sku    = _mg_override.get(sku, s_margin_val)
-                pvp_unit  = calc_pvp(fc_final, s_margin_mode, _m_sku)
+                pvp_unit  = _eff_pvp(sku, fc_final)
                 skus_data[sku] = {
                     "qty":      qty_map[sku],
                     "data":     basket[sku],
