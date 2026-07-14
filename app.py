@@ -1229,7 +1229,8 @@ if page == "🆕  Nova Cotação":
         _COLS = ["Referência", "EAN", "Marca", "Produto", "Quantidade", "FC (€)",
                  "Apoio (€)", "FC Final (€)", "Margem (%)", "Margem (€/un.)",
                  "PVP online s/ IVA (€)", "Preço cliente (€)", "Últ. preço venda cliente (€)",
-                 "Desvio (%)", "Desvio (€)", "Data última compra", "Nº compras",
+                 "Desvio (%)", "Desvio (€)", "Margem p/ últ. preço (%)", "Margem p/ últ. preço (€)",
+                 "Data última compra", "Nº compras",
                  "Stock total", "Stock 701", "Stock 708", "Stock 2928"]
         _basket_rows = []
         for _sk, _d in basket.items():
@@ -1253,6 +1254,8 @@ if page == "🆕  Nova Cotação":
                 "Últ. preço venda cliente (€)": round(_last, 4) if _last else "",
                 "Desvio (%)": round((_pvp / _last - 1) * 100, 1) if (_last and _pvp) else "",
                 "Desvio (€)": round(_pvp - _last, 2) if (_last and _pvp) else "",
+                "Margem p/ últ. preço (%)": round((_last / _fc_final - 1) * 100, 1) if (_last and _fc_final) else "",
+                "Margem p/ últ. preço (€)": round(_last - _fc_final, 2) if _last else "",
                 "Data última compra": _h_ph["date"] if _h_ph else "",
                 "Nº compras": _h_ph["n"] if _h_ph else "",
                 "Stock total": int(_d["stock"]) if _d.get("stock") is not None else "",
@@ -1291,11 +1294,14 @@ if page == "🆕  Nova Cotação":
             _F, _G, _H = _L["FC (€)"], _L["Apoio (€)"], _L["FC Final (€)"]
             _I, _J, _P = _L["Margem (%)"], _L["Margem (€/un.)"], _L["Preço cliente (€)"]
             _M, _DP, _DE = _L["Últ. preço venda cliente (€)"], _L["Desvio (%)"], _L["Desvio (€)"]
+            _MP, _MQ = _L["Margem p/ últ. preço (%)"], _L["Margem p/ últ. preço (€)"]
             for _r in range(2, len(_basket_rows) + 2):
                 _ws[f"{_H}{_r}"] = f"={_F}{_r}-{_G}{_r}"
                 _ws[f"{_P}{_r}"] = f"=IF({_J}{_r}>0,{_H}{_r}+{_J}{_r},{_H}{_r}*(1+{_I}{_r}/100))"
                 _ws[f"{_DP}{_r}"] = f'=IF({_M}{_r}>0,({_P}{_r}/{_M}{_r}-1)*100,"")'
                 _ws[f"{_DE}{_r}"] = f'=IF({_M}{_r}>0,{_P}{_r}-{_M}{_r},"")'
+                _ws[f"{_MP}{_r}"] = f'=IF(AND({_M}{_r}>0,{_H}{_r}>0),({_M}{_r}/{_H}{_r}-1)*100,"")'
+                _ws[f"{_MQ}{_r}"] = f'=IF({_M}{_r}>0,{_M}{_r}-{_H}{_r},"")'
         _bx_exp2.download_button(
             "⬇️ Exportar XLSX",
             data=_xlsx_bb.getvalue(),
