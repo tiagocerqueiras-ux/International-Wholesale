@@ -149,23 +149,20 @@ def _build_index_pandas(path: Path, entity_filter) -> dict:
     allowed = entity_filter if isinstance(entity_filter, (set, list)) else {entity_filter}
     if allowed and "entity" in df.columns:
         df = df[df["entity"].astype(str).str.strip().isin(allowed)]
-        priority_map = {e: i for i, e in enumerate(ENTITY_PRIORITY)}
-        df = df.copy()
-        df["_prio"] = df["entity"].astype(str).str.strip().map(lambda x: priority_map.get(x, 99))
-        df = df.sort_values("_prio")
-        if "sku_id" in df.columns:
-            df = df.drop_duplicates(subset=["sku_id"], keep="first")
-        df = df.drop(columns=["_prio"])
 
-    index = {}
+    # ── Agrupar por SKU: uma linha por (SKU, armazém) ─────────────────────────
+    by_sku: dict = {}
     for _, row in df.iterrows():
         key = str(row.get("sku_id", "") or "").strip()
         if not key or key == "nan":
             continue
-        # Normalizar: "5879983.0" → "5879983"
-        if key.endswith(".0"):
+        if key.endswith(".0"):          # normalizar "5879983.0" → "5879983"
             key = key[:-2]
-        index[key] = {
+        ent = str(row.get("entity", "") or "").strip()
+        by_sku.setdefault(key, {})[ent] = row
+
+    def _entry_from_row(key, row):
+        return {
             "sku_id":    key,
             "entity":    str(row.get("entity", "") or ""),
             "ean":       str(row.get("ean", "") or ""),
@@ -174,7 +171,6 @@ def _build_index_pandas(path: Path, entity_filter) -> dict:
             "subcat":    str(row.get("subcat", "") or ""),
             "brand":     str(row.get("brand", "") or ""),
             "pvp_pt":    _float_or_none(row.get("pvp_pt")),
-            "stock":     _float_or_none(row.get("stock")),
             "pcl":       _float_or_none(row.get("pcl")),
             "eis_total": _float_or_none(row.get("eis_total")),
             "eis_da":    _float_or_none(row.get("eis_da")) or 0.0,
@@ -188,6 +184,43 @@ def _build_index_pandas(path: Path, entity_filter) -> dict:
                 _float_or_none(row.get("pcl")),
             ),
         }
+
+    def _stock_of(row):
+        return _float_or_none(row.get("stock")) or 0.0
+
+    index = {}
+    for key, ent_rows in by_sku.items():
+        st701  = _stock_of(ent_rows["701"])  if "701"  in ent_rows else 0.0
+        st708  = _stock_of(ent_rows["708"])  if "708"  in ent_rows else 0.0
+        st2928 = _stock_of(ent_rows["2928"]) if "2928" in ent_rows else 0.0
+        total_stock = st701 + st708 + st2928
+
+        # Escolha da linha de PREÇO (stock-aware):
+        #   1) B2C (708›701) COM stock
+        #   2) 2928 COM stock  (só chega aqui se os B2C não têm stock)
+        #   3) B2C SEM stock (preço base)
+        #   4) 2928 SEM stock (último recurso: SKU só existe em 2928)
+        chosen = None
+        for e in ("708", "701"):
+            if e in ent_rows and _stock_of(ent_rows[e]) > 0:
+                chosen = ent_rows[e]; break
+        if chosen is None and st2928 > 0:
+            chosen = ent_rows.get("2928")
+        if chosen is None:
+            for e in ("708", "701"):
+                if e in ent_rows:
+                    chosen = ent_rows[e]; break
+        if chosen is None:
+            chosen = ent_rows.get("2928")
+        if chosen is None:
+            continue
+
+        entry = _entry_from_row(key, chosen)
+        entry["stock"]      = total_stock     # disponibilidade = soma das localizações
+        entry["stock_701"]  = st701
+        entry["stock_708"]  = st708
+        entry["stock_2928"] = st2928
+        index[key] = entry
 
     return index
 

@@ -832,6 +832,11 @@ if page == "🆕  Nova Cotação":
             _pvp_online = d.get("pvp_pt")
             if _pvp_online:
                 cols[3].caption(f"🔖 PVP online (ref. interna): {_pvp_online:.2f} €")
+            _st_tot = d.get("stock")
+            if _st_tot is not None:
+                cols[3].caption(
+                    f"📦 Stock: {int(_st_tot)} · 701:{int(d.get('stock_701') or 0)}"
+                    f" · 708:{int(d.get('stock_708') or 0)} · 2928:{int(d.get('stock_2928') or 0)}")
 
             # FC_sim depende do destino (vat_rate vem da secção 2)
             # Para exportação, deduz EIS do PCL (taxa não aplicável fora de PT)

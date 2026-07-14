@@ -144,8 +144,13 @@ TRANSPORT_CACHE = Path(__file__).parent / "data" / "transport_cache.json"
 EMAILS_OUT_DIR  = Path(__file__).parent / "emails_out"
 
 # ── Simulador ─────────────────────────────────────────────────────────────────
-ENTITY_FILTER   = {"701", "708"}
+# Armazéns/entidades: 701 = B2C Grandes Domésticos, 708 = B2C Outros, 2928 = B2B.
+# Preço base = 701/708 (prioridade 708 › 701). O 2928 é preço de REFERÊNCIA,
+# usado só quando tem stock e os B2C (701/708) não têm. A disponibilidade (stock)
+# é a SOMA das 3 localizações. Lógica em sku_lookup._build_index_pandas.
+ENTITY_FILTER   = {"701", "708", "2928"}
 ENTITY_PRIORITY = ["708", "701"]
+WH_LABELS       = {"701": "701 (B2C GD)", "708": "708 (B2C Outros)", "2928": "2928 (B2B)"}
 SIMULATOR_HEADER_ROW = 5
 
 SIMULATOR_COLS = {
