@@ -866,6 +866,7 @@ if page == "🆕  Nova Cotação":
         qty_map = {}
         any_nd  = False
         _cargo_value = 0.0   # valor da mercadoria (Σ preço cliente × qtd) — base do seguro
+        import purchase_history as _phist   # histórico de compras (African Markets)
 
         for sku, d in list(basket.items()):
             ufc_raw   = d.get("ufc_raw")
@@ -893,6 +894,11 @@ if page == "🆕  Nova Cotação":
                 cols[3].caption(
                     f"📦 Stock: {int(_st_tot)} · 701:{int(d.get('stock_701') or 0)}"
                     f" · 708:{int(d.get('stock_708') or 0)} · 2928:{int(d.get('stock_2928') or 0)}")
+            _hist = _phist.last_purchase(client, sku) if client else None
+            if _hist and _hist.get("price"):
+                cols[3].caption(
+                    f"🧾 Últ. compra ({client[:18]}): {_hist['price']:.2f} € · "
+                    f"{_hist['date']} · {_hist['n']}×")
 
             # FC_sim depende do destino (vat_rate vem da secção 2)
             # Para exportação, deduz EIS do PCL (taxa não aplicável fora de PT)
@@ -954,10 +960,16 @@ if page == "🆕  Nova Cotação":
             if pvp:
                 _clr = "#CC0000" if _below_min else "#007700"
                 _mrk = "🔒 " if _has_ov else ""
+                _hist_note = ""
+                if _hist and _hist.get("price"):
+                    _dp = (pvp - _hist["price"]) / _hist["price"] * 100 if _hist["price"] else 0.0
+                    if abs(_dp) >= 5:
+                        _hist_note = (f' <span style="color:#B36B00;font-size:11px;">'
+                                      f'vs últ. cliente {_dp:+.0f}% ⚠️</span>')
                 cols[8].markdown(
                     f'{_mrk}<span style="color:{_clr};font-weight:700;">{fmt4(pvp)} €</span>'
                     f' <span style="color:#888;font-size:11px;">({_line_margin_pct:.1f}%'
-                    f'{" ⚠️" if _below_min else ""})</span>',
+                    f'{" ⚠️" if _below_min else ""})</span>{_hist_note}',
                     unsafe_allow_html=True
                 )
 
@@ -1189,6 +1201,7 @@ if page == "🆕  Nova Cotação":
             _m_sku    = _mg_override.get(_sk, s_margin_val)
             _pvp_un   = _eff_pvp(_sk, _fc_final)
             _pf_ov    = float(st.session_state.get(f"pf_{_sk}", 0.0) or 0.0)
+            _h_ph     = _phist.last_purchase(client, _sk) if client else None
             _qty      = qty_map.get(_sk, 1)
             _basket_rows.append({
                 # ── Colunas RE-IMPORTÁVEIS (nomes reconhecidos pelo importador) ──
@@ -1201,6 +1214,9 @@ if page == "🆕  Nova Cotação":
                 "Margem (%)":          _m_sku,
                 "Preço final (€)":     round(_pf_ov, 2) if _pf_ov > 0 else "",
                 # ── Colunas de REFERÊNCIA (ignoradas na importação) ──
+                "Últ. preço cliente (€)": round(_h_ph["price"], 4) if (_h_ph and _h_ph.get("price")) else "",
+                "Data últ. compra":       _h_ph["date"] if _h_ph else "",
+                "Nº compras (cliente)":   _h_ph["n"] if _h_ph else "",
                 "FC Simulador (€)":    _fc_sim,
                 "FC Final (€)":        _fc_final,
                 "Preço calculado (€)": round(_pvp_un, 4),
