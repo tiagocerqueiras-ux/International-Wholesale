@@ -642,8 +642,9 @@ if page == "🆕  Nova Cotação":
     # ── Importar lista de SKUs/EANs de ficheiro ───────────────────────────────
     with st.expander("📥 Importar lista de produtos (CSV / TXT / XLSX)", expanded=False):
         st.caption(
-            "O ficheiro deve ter uma coluna chamada **SKU** ou **EAN** "
-            "(senão será usada a primeira coluna). Aceita CSV, TXT (separado por vírgula/espaço) e XLSX."
+            "Colunas aceites (XLSX/CSV): **Referência**/SKU ou **EAN** (obrigatória) e, opcionais, "
+            "**Quantidade**, **Apoio (€)** e **Margem (%)**. Sem cabeçalho reconhecido, usa a 1.ª coluna. "
+            "TXT lê apenas códigos (separados por vírgula/espaço)."
         )
         upl_basket = st.file_uploader(
             "Ficheiro com SKUs ou EANs",
@@ -655,28 +656,69 @@ if page == "🆕  Nova Cotação":
             ["SKU ID", "EAN"],
             horizontal=True, key="upl_basket_mode_cot",
         )
+        # Template de importação (Referência, Quantidade, Apoio, Margem)
+        try:
+            import io as _io_tmpl
+            from openpyxl import Workbook as _WB_tmpl
+            _wbt = _WB_tmpl(); _wst = _wbt.active; _wst.title = "Proposta"
+            _wst.append(["Referência", "Quantidade", "Apoio (€)", "Margem (%)"])
+            _wst.append(["8093098", 12, 0, 15])
+            _wst.append(["8420642", 3, 0, 12])
+            _buft = _io_tmpl.BytesIO(); _wbt.save(_buft)
+            st.download_button(
+                "⬇️ Descarregar template (XLSX)", _buft.getvalue(),
+                "Template_Importacao_Proposta.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="tmpl_imp_basket")
+        except Exception:
+            pass
         if upl_basket is not None and st.button("📥 Importar para o Cesto", key="btn_imp_basket"):
-            # Ler códigos
-            imported = []
+            st.session_state.setdefault("margin_override", {})
+            imported = []   # cada item: {"code","qty","so","mg"}
             try:
                 name = upl_basket.name.lower()
-                prefer = ("sku", "sku_id", "código", "codigo") if upl_mode == "SKU ID" else ("ean", "eans", "barcode")
+                code_pref = (("sku", "sku_id", "código", "codigo", "referência", "referencia", "ref")
+                             if upl_mode == "SKU ID" else ("ean", "eans", "barcode", "código de barras"))
+
+                def _pick(cols, options):
+                    return next((c for c in cols if str(c).strip().lower() in options), None)
+
+                def _num(v):
+                    try:
+                        return float(str(v).replace("€", "").replace("%", "").replace(",", ".").strip())
+                    except (TypeError, ValueError):
+                        return None
+
+                _df = None
                 if name.endswith((".xlsx", ".xls")):
                     import pandas as _pd_imp
                     _df = _pd_imp.read_excel(upl_basket, dtype=str)
-                    _col = next((c for c in _df.columns if str(c).strip().lower() in prefer), _df.columns[0])
-                    imported = [str(x).strip() for x in _df[_col].dropna() if str(x).strip()]
                 elif name.endswith(".csv"):
                     import pandas as _pd_imp
                     from io import StringIO as _SIO
                     _content = upl_basket.read().decode("utf-8-sig", errors="ignore")
                     _sep = ";" if _content.count(";") > _content.count(",") else ","
                     _df = _pd_imp.read_csv(_SIO(_content), sep=_sep, dtype=str)
-                    _col = next((c for c in _df.columns if str(c).strip().lower() in prefer), _df.columns[0])
-                    imported = [str(x).strip() for x in _df[_col].dropna() if str(x).strip()]
-                else:
+                else:  # TXT — só códigos
                     _content = upl_basket.read().decode("utf-8", errors="ignore")
-                    imported = [s.strip() for s in re.split(r'[,;\s]+', _content) if s.strip()]
+                    imported = [{"code": s.strip()} for s in re.split(r'[,;\s]+', _content) if s.strip()]
+
+                if _df is not None:
+                    _cols   = list(_df.columns)
+                    _c_code = _pick(_cols, code_pref) or _cols[0]
+                    _c_qty  = _pick(_cols, ("quantidade", "qtd", "qtd.", "qty", "quantity"))
+                    _c_so   = _pick(_cols, ("apoio", "apoio (€)", "so", "so negoc", "so negoc. (€)", "sell-out", "sell out", "sellout"))
+                    _c_mg   = _pick(_cols, ("margem", "margem (%)", "margem %", "margin", "margin (%)"))
+                    for _, _r in _df.iterrows():
+                        _code = str(_r.get(_c_code) or "").strip()
+                        if not _code or _code.lower() == "nan":
+                            continue
+                        imported.append({
+                            "code": _code,
+                            "qty":  _num(_r.get(_c_qty)) if _c_qty else None,
+                            "so":   _num(_r.get(_c_so))  if _c_so  else None,
+                            "mg":   _num(_r.get(_c_mg))  if _c_mg  else None,
+                        })
             except Exception as e:
                 st.error(f"Erro a ler ficheiro: {e}")
 
@@ -684,21 +726,30 @@ if page == "🆕  Nova Cotação":
                 with st.spinner(f"A consultar {len(imported)} código(s)..."):
                     _idx = load_index()
                     if upl_mode == "SKU ID":
-                        _res = {s: _idx.get(s) for s in imported}
+                        _res = {it["code"]: _idx.get(it["code"]) for it in imported}
                     else:
                         _ean_idx = {v.get("ean", "").strip(): v for v in _idx.values() if v.get("ean")}
-                        _res = {e: _ean_idx.get(e) for e in imported}
+                        _res = {it["code"]: _ean_idx.get(it["code"]) for it in imported}
 
-                _found = {k: v for k, v in _res.items() if v}
-                _not_found = [k for k, v in _res.items() if not v]
-
-                for _ref, _d in _found.items():
-                    _sid = _d.get("sku_id", _ref)
+                _found_n, _not_found = 0, []
+                for it in imported:
+                    _d = _res.get(it["code"])
+                    if not _d:
+                        _not_found.append(it["code"]); continue
+                    _sid = _d.get("sku_id", it["code"])
                     st.session_state["product_basket"][_sid] = _d
                     st.session_state["so_manual"].setdefault(_sid, 0.0)
+                    if it.get("qty") and it["qty"] > 0:
+                        st.session_state[f"qty_{_sid}"] = int(round(it["qty"]))
+                    if it.get("so") is not None:
+                        st.session_state["so_manual"][_sid] = float(it["so"])
+                    if it.get("mg") is not None:
+                        st.session_state["margin_override"][_sid] = float(it["mg"])
+                    _found_n += 1
 
-                if _found:
-                    st.success(f"✅ {len(_found)} produto(s) adicionado(s) ao cesto.")
+                if _found_n:
+                    st.success(f"✅ {_found_n} produto(s) adicionado(s) ao cesto "
+                               "(com quantidade/apoio/margem quando indicados no ficheiro).")
                 if _not_found:
                     st.warning(f"❌ {len(_not_found)} não encontrado(s): {', '.join(_not_found[:20])}"
                                + (f" ... (+{len(_not_found)-20})" if len(_not_found) > 20 else ""))
