@@ -684,8 +684,15 @@ if page == "🆕  Nova Cotação":
                     return next((c for c in cols if str(c).strip().lower() in options), None)
 
                 def _num(v):
+                    """Número ou None. Trata vazios/NaN (float('nan') não levanta erro)."""
                     try:
-                        return float(str(v).replace("€", "").replace("%", "").replace(",", ".").strip())
+                        if v is None:
+                            return None
+                        s = str(v).replace("€", "").replace("%", "").replace(",", ".").strip()
+                        if not s or s.lower() in ("nan", "none", "nat", "-"):
+                            return None
+                        f = float(s)
+                        return None if f != f else f      # NaN → None
                     except (TypeError, ValueError):
                         return None
 
