@@ -2110,85 +2110,135 @@ elif page == "📋  Deals em Curso":
                             st.session_state[_edit_key] = not st.session_state.get(_edit_key, False)
 
                         if st.session_state.get(_edit_key):
-                            _skus_edit = dict(deal.get("_skus_detail") or {})
-                            if not _skus_edit:
-                                st.warning("Sem dados de produtos para editar.")
-                            else:
-                                with st.container(border=True):
-                                    st.caption("✏️ Editar preços — altera Qty e/ou Margem % por linha · Preço Cliente é calculado automaticamente")
-                                    _vat_str_e  = str(deal.get("IVA", ""))
-                                    _vat_rate_e = 0.23 if "23" in _vat_str_e else 0.0
-                                    _freight_e  = float(deal.get("Frete (€)") or 0)
+                            _wk = f"editskus_{did}"
+                            if _wk not in st.session_state:
+                                st.session_state[_wk] = dict(deal.get("_skus_detail") or {})
+                            _skus_edit = st.session_state[_wk]
+                            with st.container(border=True):
+                                st.caption("✏️ Editar produtos — Qty, Margem % ou Preço fixo (0 = usar margem). "
+                                           "Podes **remover (✕)** e **adicionar** produtos. Disponível em qualquer estado.")
+                                _vat_str_e  = str(deal.get("IVA", ""))
+                                _vat_rate_e = 0.23 if "23" in _vat_str_e else 0.0
+                                _freight_e  = float(deal.get("Frete (€)") or 0)
 
-                                    eh = st.columns([0.6, 1.0, 1.3, 2.8, 1.2, 1.2, 1.2, 1.2])
-                                    for col, lbl in zip(eh, ["Qty","SKU","EAN","Produto","FC Final","Margem %","Preço Cliente","Total"]):
-                                        col.caption(lbl)
+                                # ── Adicionar produto ao deal ──
+                                _ac1, _ac2 = st.columns([4, 1])
+                                _add_sku = _ac1.text_input("Adicionar SKU", key=f"addsku_{did}",
+                                                           placeholder="SKU a adicionar (ex: 8093098)",
+                                                           label_visibility="collapsed")
+                                if _ac2.button("➕ Adicionar", key=f"addbtn_{did}", use_container_width=True):
+                                    _s = (_add_sku or "").strip()
+                                    if not _s:
+                                        st.warning("Indica um SKU.")
+                                    elif _s in _skus_edit:
+                                        st.warning(f"{_s} já está neste deal.")
+                                    else:
+                                        _dd = load_index().get(_s)
+                                        if not _dd:
+                                            st.error(f"SKU {_s} não encontrado no simulador.")
+                                        else:
+                                            _fcn = float(_dd.get("ufc_raw") or 0)
+                                            st.session_state[_wk][_s] = {
+                                                "qty": 1, "data": _dd, "so_neg": 0.0,
+                                                "fc_final": _fcn, "pvp": round(_fcn, 4), "margin": 0.0,
+                                            }
+                                            st.rerun()
 
-                                    new_skus = {}
-                                    for sku, info in _skus_edit.items():
-                                        d        = info.get("data") or {}
-                                        fc_final = float(info.get("fc_final") or d.get("ufc_raw") or 0)
-                                        old_pvp  = float(info.get("pvp") or fc_final)
-                                        old_qty  = int(info.get("qty") or 1)
-                                        ean      = d.get("ean") or "—"
-                                        name     = f"{d.get('brand','')} · {d.get('name','')}"
+                                if not _skus_edit:
+                                    st.warning("Deal sem produtos — adiciona pelo menos um antes de guardar.")
 
-                                        # Margem gross atual: (pvp - fc) / pvp * 100
-                                        _cur_margin = round(((old_pvp - fc_final) / old_pvp * 100) if old_pvp > 0 else 0.0, 1)
+                                eh = st.columns([0.6, 1.0, 1.2, 2.4, 1.0, 1.0, 1.2, 1.4, 0.4])
+                                for col, lbl in zip(eh, ["Qty","SKU","EAN","Produto","FC Final",
+                                                         "Margem %","Preço (0=auto)","Total","✕"]):
+                                    col.caption(lbl)
 
-                                        ec = st.columns([0.6, 1.0, 1.3, 2.8, 1.2, 1.2, 1.2, 1.2])
-                                        if f"eq_{did}_{sku}" not in st.session_state:
-                                            st.session_state[f"eq_{did}_{sku}"] = old_qty
-                                        if f"em_{did}_{sku}" not in st.session_state:
-                                            st.session_state[f"em_{did}_{sku}"] = _cur_margin
+                                new_skus = {}
+                                for sku, info in list(_skus_edit.items()):
+                                    d        = info.get("data") or {}
+                                    fc_final = float(info.get("fc_final") or d.get("ufc_raw") or 0)
+                                    old_pvp  = float(info.get("pvp") or fc_final)
+                                    old_qty  = int(info.get("qty") or 1)
+                                    ean      = d.get("ean") or "—"
+                                    name     = f"{d.get('brand','')} · {d.get('name','')}"
+                                    # Margem gross atual: (pvp - fc) / pvp * 100
+                                    _cur_margin = round(((old_pvp - fc_final) / old_pvp * 100) if old_pvp > 0 else 0.0, 1)
+                                    _cur_margin = min(max(_cur_margin, 0.0), 99.9)
 
-                                        new_qty = ec[0].number_input("", min_value=1, step=1,
-                                                                      key=f"eq_{did}_{sku}",
-                                                                      label_visibility="collapsed")
-                                        ec[1].markdown(f"`{sku}`")
-                                        ec[2].markdown(f"`{ean}`")
-                                        ec[3].markdown(name)
-                                        ec[4].markdown(f"{fc_final:.2f} €")
+                                    ec = st.columns([0.6, 1.0, 1.2, 2.4, 1.0, 1.0, 1.2, 1.4, 0.4])
+                                    st.session_state.setdefault(f"eq_{did}_{sku}", old_qty)
+                                    st.session_state.setdefault(f"em_{did}_{sku}", _cur_margin)
+                                    st.session_state.setdefault(f"ep_{did}_{sku}", 0.0)
 
-                                        new_margin_line = ec[5].number_input(
-                                            "", min_value=0.0, max_value=99.9, step=0.5,
-                                            format="%.1f", key=f"em_{did}_{sku}",
-                                            label_visibility="collapsed",
-                                            help="Margem bruta % — Preço Cliente é calculado automaticamente",
-                                        )
+                                    new_qty = ec[0].number_input("", min_value=1, step=1,
+                                                                 key=f"eq_{did}_{sku}",
+                                                                 label_visibility="collapsed")
+                                    ec[1].markdown(f"`{sku}`")
+                                    ec[2].markdown(f"`{ean}`")
+                                    ec[3].markdown(name)
+                                    ec[4].markdown(f"{fc_final:.2f} €")
+                                    new_margin_line = ec[5].number_input(
+                                        "", min_value=0.0, max_value=99.9, step=0.5,
+                                        format="%.1f", key=f"em_{did}_{sku}",
+                                        label_visibility="collapsed",
+                                        help="Margem bruta % (usada quando o Preço fixo é 0)",
+                                    )
+                                    _p_ov = ec[6].number_input(
+                                        "", min_value=0.0, step=1.0, format="%.2f",
+                                        key=f"ep_{did}_{sku}", label_visibility="collapsed",
+                                        help="Preço fixo por unidade — 0 = calcular pela margem",
+                                    )
+                                    if _p_ov and float(_p_ov) > 0:
+                                        new_pvp = round(float(_p_ov), 4)
+                                    else:
+                                        new_pvp = round(fc_final / (1 - new_margin_line / 100), 4) \
+                                            if new_margin_line < 100 else fc_final
+                                    _eff_mg = round(((new_pvp - fc_final) / new_pvp * 100) if new_pvp > 0 else 0.0, 1)
+                                    ec[7].markdown(
+                                        f"**{new_pvp * new_qty:.2f} €**  \n"
+                                        f"<span style='color:#888;font-size:11px'>{new_pvp:.2f} €/un · {_eff_mg:.1f}%</span>",
+                                        unsafe_allow_html=True)
+                                    if ec[8].button("✕", key=f"erm_{did}_{sku}", help="Remover produto"):
+                                        st.session_state[_wk].pop(sku, None)
+                                        for _k in (f"eq_{did}_{sku}", f"em_{did}_{sku}", f"ep_{did}_{sku}"):
+                                            st.session_state.pop(_k, None)
+                                        st.rerun()
 
-                                        # pvp calculado da margem gross: pvp = fc / (1 - m/100)
-                                        new_pvp = round(fc_final / (1 - new_margin_line / 100), 4) if new_margin_line < 100 else fc_final
-                                        ec[6].markdown(f"**{new_pvp:.2f} €**")
-                                        ec[7].markdown(f"**{new_pvp * new_qty:.2f} €**")
+                                    new_info = dict(info)
+                                    new_info["qty"]    = new_qty
+                                    new_info["pvp"]    = new_pvp
+                                    new_info["margin"] = _eff_mg
+                                    new_skus[sku] = new_info
 
-                                        new_info = dict(info)
-                                        new_info["qty"]    = new_qty
-                                        new_info["pvp"]    = new_pvp
-                                        new_info["margin"] = round(new_margin_line, 2)
-                                        new_skus[sku] = new_info
+                                # Totais
+                                _new_pvp_total  = sum(new_skus[s]["pvp"] * new_skus[s]["qty"] for s in new_skus)
+                                _new_cost_total = sum(float(new_skus[s].get("fc_final") or (new_skus[s].get("data") or {}).get("ufc_raw") or 0) * new_skus[s]["qty"] for s in new_skus)
+                                _new_vat        = round(_new_pvp_total * _vat_rate_e, 2)
+                                _new_total      = round(_new_pvp_total + _freight_e + _new_vat, 2)
+                                _new_margin_pct = ((_new_pvp_total - _new_cost_total) / _new_pvp_total * 100) if _new_pvp_total else 0
 
-                                    # Totais
-                                    _new_pvp_total  = sum(new_skus[s]["pvp"] * new_skus[s]["qty"] for s in new_skus)
-                                    # Usar fc_final como base de custo (consistente com o cálculo do pvp por linha)
-                                    _new_cost_total = sum(float(new_skus[s].get("fc_final") or (new_skus[s].get("data") or {}).get("ufc_raw") or 0) * new_skus[s]["qty"] for s in new_skus)
-                                    _new_vat        = round(_new_pvp_total * _vat_rate_e, 2)
-                                    _new_total      = round(_new_pvp_total + _freight_e + _new_vat, 2)
-                                    _new_margin_pct = ((_new_pvp_total - _new_cost_total) / _new_pvp_total * 100) if _new_pvp_total else 0
+                                st.markdown(f"**Subtotal:** {_new_pvp_total:.2f} € &nbsp;|&nbsp; "
+                                            f"**Frete:** {_freight_e:.2f} € &nbsp;|&nbsp; "
+                                            f"**Total:** {_new_total:.2f} € &nbsp;|&nbsp; "
+                                            f"**Margem:** {_new_margin_pct:.1f}%")
 
-                                    st.markdown(f"**Subtotal:** {_new_pvp_total:.2f} € &nbsp;|&nbsp; "
-                                                f"**Frete:** {_freight_e:.2f} € &nbsp;|&nbsp; "
-                                                f"**Total:** {_new_total:.2f} € &nbsp;|&nbsp; "
-                                                f"**Margem:** {_new_margin_pct:.1f}%")
-
-                                    if st.button("💾 Guardar Alterações de Preços", key=f"save_prices_{did}", type="primary"):
+                                _sv1, _sv2 = st.columns([1, 1])
+                                if _sv1.button("💾 Guardar Alterações", key=f"save_prices_{did}",
+                                               type="primary", use_container_width=True):
+                                    if not new_skus:
+                                        st.error("O deal tem de ter pelo menos um produto.")
+                                    else:
                                         ok = update_deal_prices(did, new_skus, _new_total, _new_margin_pct)
                                         if ok:
-                                            st.success(f"✅ Preços do deal **{did}** atualizados!")
+                                            st.success(f"✅ Deal **{did}** atualizado!")
                                             st.session_state.pop(_edit_key, None)
+                                            st.session_state.pop(_wk, None)
                                             st.rerun()
                                         else:
                                             st.error("Erro ao guardar. Tenta novamente.")
+                                if _sv2.button("✖ Cancelar", key=f"cancel_prices_{did}", use_container_width=True):
+                                    st.session_state.pop(_edit_key, None)
+                                    st.session_state.pop(_wk, None)
+                                    st.rerun()
 
                     # ── Atualizar status ────────────────────────────────────────
                     st.markdown("---")

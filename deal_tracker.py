@@ -408,6 +408,7 @@ def update_deal_prices(deal_id: str, skus_data: dict, pvp_total: float, margin_p
             qty_total += qty
         _get_client().table(TBL_DEALS).update({
             "skus_detail":    skus_data,
+            "sku_ids":        ", ".join(skus_data.keys()),   # sincroniza ao add/remover
             "proposed_value": round(pvp_total, 2),
             "margin_pct":     f"{margin_pct:.1f}%",
             "qty_total":      qty_total,
