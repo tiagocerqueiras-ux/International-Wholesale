@@ -631,7 +631,7 @@ if page == "🆕  Nova Cotação":
         ids_raw = st.text_input(lbl, placeholder=ph, key="ids_raw_cot")
     with col_b:
         if margin_mode == "Percentagem (%)":
-            margin_val = st.number_input("Margem %", min_value=0.0, max_value=200.0, value=5.0, step=0.5, key="margin_val_pct_cot")
+            margin_val = st.number_input("Margem %", min_value=0.0, max_value=1000.0, value=5.0, step=0.5, key="margin_val_pct_cot")
         else:
             margin_val = st.number_input("Margem €/un.", min_value=0.0, max_value=9999.0, value=10.0, step=1.0, key="margin_val_eur_cot")
 
@@ -970,9 +970,21 @@ if page == "🆕  Nova Cotação":
                 _m_line = st.session_state["margin_override"].get(sku, s_margin_val)
             else:
                 _m_default = st.session_state["margin_override"].get(sku, s_margin_val)
-                _m_max = 200.0 if s_margin_mode == "Percentagem (%)" else 9999.0
+                _m_max = 1000.0 if s_margin_mode == "Percentagem (%)" else 9999.0
+                # Proteger contra valores importados fora do intervalo do widget
+                try:
+                    _m_default = min(max(float(_m_default or 0.0), 0.0), _m_max)
+                except (TypeError, ValueError):
+                    _m_default = 0.0
+                if f"mg_{sku}" in st.session_state:
+                    try:
+                        _mv = float(st.session_state[f"mg_{sku}"])
+                        if _mv < 0 or _mv > _m_max:
+                            st.session_state[f"mg_{sku}"] = min(max(_mv, 0.0), _m_max)
+                    except (TypeError, ValueError):
+                        st.session_state[f"mg_{sku}"] = _m_default
                 _m_line = cols[7].number_input("", min_value=0.0, max_value=_m_max,
-                                               value=float(_m_default), step=0.5, format="%.1f",
+                                               value=_m_default, step=0.5, format="%.1f",
                                                key=f"mg_{sku}", label_visibility="collapsed",
                                                help="Margem para este SKU (sobrepõe o global)")
                 st.session_state["margin_override"][sku] = _m_line
