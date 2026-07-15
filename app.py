@@ -28,7 +28,7 @@ from config import (
     BP_COMMISSION_TIERS, BP_COMMISSION_BASE_PCT,
 )
 from sku_lookup import lookup_skus, search_by_name, build_cache
-from deal_tracker import add_deal, update_status, update_margin, update_deal_prices, duplicate_deal, delete_deal, list_deals, get_deal, deal_products_table, get_sku_price_history, update_deal_operational, get_pipeline_stats, get_executive_dashboard_data
+from deal_tracker import add_deal, update_status, update_margin, update_deal_prices, duplicate_deal, delete_deal, list_deals, get_deal, deal_products_table, get_sku_price_history, update_deal_operational, update_deal_fields, get_pipeline_stats, get_executive_dashboard_data
 from email_generator import generate_proposal, generate_followup, save_email_html, generate_closing_emails, generate_supplier_request, generate_expedition_confirmation, generate_transport_request
 from proforma import generate_proforma
 from email_sender import create_draft, build_subject
@@ -2086,6 +2086,59 @@ elif page == "📋  Deals em Curso":
                     cc3.markdown(f"**IVA**  \n{deal.get('IVA','—')}")
                     cc4.markdown(f"**Frete**  \n{fmt2(deal.get('Frete (€)',0))} €")
                     cc5.markdown(f"**Availability / ETA**  \n{deal.get('Availability / ETA','—')}")
+
+                    # ── Editar dados da proposta (qualquer estado) ──────────────
+                    if _role in CAN_EDIT_DEALS:
+                        with st.expander("✏️ Editar dados da proposta", expanded=False):
+                            _e1, _e2, _e3 = st.columns(3)
+                            _ed_client  = _e1.text_input("Cliente", value=str(deal.get("Cliente", "") or ""),
+                                                         key=f"ed_cl_{did}")
+                            _ed_company = _e2.text_input("Empresa", value=str(deal.get("company", "") or ""),
+                                                         key=f"ed_co_{did}")
+                            _ed_country = _e3.text_input("País", value=str(deal.get("País", "") or ""),
+                                                         key=f"ed_ct_{did}")
+                            _e4, _e5 = st.columns([2, 1])
+                            _ed_email = _e4.text_input("Email do cliente",
+                                                       value=str(deal.get("Email Cliente", "") or ""),
+                                                       key=f"ed_em_{did}")
+                            _ed_avail = _e5.text_input("Availability / ETA",
+                                                       value=str(deal.get("Availability / ETA", "") or ""),
+                                                       key=f"ed_av_{did}")
+                            _e6, _e7 = st.columns(2)
+                            _inc_cur = str(deal.get("Incoterm", "") or "")
+                            _ed_inc = _e6.selectbox(
+                                "Incoterm", INCOTERMS_LIST,
+                                index=INCOTERMS_LIST.index(_inc_cur) if _inc_cur in INCOTERMS_LIST else 0,
+                                key=f"ed_in_{did}")
+                            _pay_cur = str(deal.get("Pagamento", "") or "")
+                            _ed_pay = _e7.selectbox(
+                                "Pagamento", PAYMENT_CONDITIONS_LIST,
+                                index=PAYMENT_CONDITIONS_LIST.index(_pay_cur) if _pay_cur in PAYMENT_CONDITIONS_LIST else 0,
+                                key=f"ed_pg_{did}")
+                            _e8, _e9 = st.columns(2)
+                            _vat_ui  = ["Isento — Exportação", "IVA 23% — Portugal"]
+                            _ed_vat_ui = _e8.selectbox(
+                                "IVA", _vat_ui,
+                                index=1 if "23" in str(deal.get("IVA", "") or "") else 0,
+                                key=f"ed_iva_{did}")
+                            _ed_vat = "IVA 23%" if "23%" in _ed_vat_ui else "Isento"
+                            _ed_fre = _e9.number_input("Frete + seguro (€)", min_value=0.0, step=10.0,
+                                                       format="%.2f",
+                                                       value=float(deal.get("Frete (€)") or 0),
+                                                       key=f"ed_fr_{did}")
+                            _ed_notes = st.text_area("Notas", value=str(deal.get("Notas", "") or ""),
+                                                     key=f"ed_nt_{did}", height=80)
+                            if st.button("💾 Guardar dados da proposta", key=f"ed_save_{did}",
+                                         type="primary"):
+                                if update_deal_fields(
+                                    did, client=_ed_client, company=_ed_company, country=_ed_country,
+                                    client_email=_ed_email, incoterm=_ed_inc, payment_conditions=_ed_pay,
+                                    vat=_ed_vat, freight=_ed_fre, availability=_ed_avail, notes=_ed_notes,
+                                ):
+                                    st.success("✅ Dados da proposta atualizados!")
+                                    st.rerun()
+                                else:
+                                    st.error("Erro ao guardar os dados da proposta.")
 
                     # ── Tabela de produtos ──────────────────────────────────────
                     st.markdown("**Produtos Negociados**")

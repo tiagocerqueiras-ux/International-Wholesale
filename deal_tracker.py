@@ -289,6 +289,32 @@ def update_deal_operational(
         return False
 
 
+# Campos gerais/comerciais editáveis em qualquer estado
+_EDITABLE_FIELDS = {
+    "client", "company", "country", "client_email", "language", "incoterm",
+    "payment_conditions", "vat", "freight", "availability", "notes", "client_id",
+}
+
+
+def update_deal_fields(deal_id: str, **fields) -> bool:
+    """Atualiza campos gerais/comerciais de um deal (permitido em qualquer estado)."""
+    upd = {k: v for k, v in fields.items() if k in _EDITABLE_FIELDS and v is not None}
+    if not upd:
+        return True
+    if "freight" in upd:
+        try:
+            upd["freight"] = round(float(upd["freight"]), 2)
+        except (TypeError, ValueError):
+            upd.pop("freight")
+    upd["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+    try:
+        _get_client().table(TBL_DEALS).update(upd).eq("deal_id", deal_id).execute()
+        return True
+    except Exception as e:
+        print(f"[deal_tracker] update_deal_fields erro: {e}")
+        return False
+
+
 # Estados que representam uma compra efetiva (confirmada em diante)
 _PURCHASE_STATUSES = ("Encomenda Confirmada", "Em Preparação", "Expedido", "Entregue", "Faturado")
 
