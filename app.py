@@ -4943,10 +4943,11 @@ elif page == "📦  Adjudicadas":
             with st.spinner("A escrever no ficheiro de controlo..."):
                 _n, _msg = controlo_writer.append_deal({
                     "deal_id": deal.get("Deal ID"), "client": deal.get("Cliente"),
+                    "company": deal.get("company"),
                     "status": deal.get("Status"), "created_at": deal.get("Data Criação"),
                     "skus_detail": sd},
                     business=str(deal.get("Negócio") or ""),
-                    status_label=str(deal.get("Status") or "CONCLUÍDO").upper())
+                    status_label=controlo_writer.status_to_label(deal.get("Status")))
             if _n:
                 st.success(_msg)
             else:

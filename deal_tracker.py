@@ -231,9 +231,11 @@ def update_status(deal_id: str, new_status: str, notes: str = "") -> bool:
                     _d = get_deal(deal_id) or {}
                     _cw.append_deal({
                         "deal_id": deal_id, "client": _d.get("Cliente"),
+                        "company": _d.get("company"),
                         "status": new_status, "created_at": _d.get("Data Criação"),
                         "skus_detail": _d.get("_skus_detail") or {},
-                    }, business=str(_d.get("Negócio") or ""), status_label=new_status.upper())
+                    }, business=str(_d.get("Negócio") or ""),
+                       status_label=_cw.status_to_label(new_status))
             except Exception as _e:
                 print(f"[deal_tracker] auto controlo erro: {_e}")
 

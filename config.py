@@ -164,6 +164,8 @@ SIMULATOR_COLS = {
     "name":      4,
     "status":    5,
     "entity":    6,
+    "un":        7,
+    "supplier":  11,
     "cat":       8,
     "subcat":    9,
     "brand":     12,

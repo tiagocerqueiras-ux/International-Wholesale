@@ -182,6 +182,8 @@ def _build_index_pandas(path: Path, entity_filter) -> dict:
             "cat":       str(row.get("cat", "") or ""),
             "subcat":    str(row.get("subcat", "") or ""),
             "brand":     str(row.get("brand", "") or ""),
+            "un":        str(row.get("un", "") or "").replace("nan", ""),
+            "supplier":  str(row.get("supplier", "") or "").replace("nan", ""),
             "pvp_pt":    _float_or_none(row.get("pvp_pt")),
             "pcl":       _float_or_none(row.get("pcl")),
             "eis_total": _float_or_none(row.get("eis_total")),

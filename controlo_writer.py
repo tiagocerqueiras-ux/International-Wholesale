@@ -59,7 +59,8 @@ def _mark(deal_id):
 def _enrich(data: dict, sku) -> dict:
     """Garante que produto/custo vêm do simulador — re-consulta o índice se faltar."""
     ok = data.get("ean") and str(data.get("ean")).lower() != "nan" \
-        and data.get("name") and (data.get("pcl") or data.get("ufc_raw"))
+        and data.get("name") and (data.get("pcl") or data.get("ufc_raw")) \
+        and data.get("un") and data.get("supplier")
     if ok:
         return data
     try:
@@ -77,7 +78,12 @@ def _enrich(data: dict, sku) -> dict:
         return data
 
 
-def append_deal(deal: dict, business: str = "", status_label: str = "CONCLUÍDO",
+def status_to_label(app_status: str) -> str:
+    """Mapeia o estado da app para a convenção do ficheiro: Faturado→CONCLUÍDO, resto→PO."""
+    return "CONCLUÍDO" if str(app_status).strip().lower() == "faturado" else "PO"
+
+
+def append_deal(deal: dict, business: str = "", status_label: str = "PO",
                 force: bool = False) -> tuple:
     """Acrescenta 1 linha por SKU ao ficheiro de controlo. Devolve (n_linhas, msg)."""
     sd = deal.get("skus_detail") or deal.get("_skus_detail") or {}
@@ -125,17 +131,18 @@ def append_deal(deal: dict, business: str = "", status_label: str = "CONCLUÍDO"
             if is_f[c]:
                 dst.value = Translator(src.value, origin=src.coordinate)\
                     .translate_formula(f"{get_column_letter(c)}{r}")
-        # inputs (deal)
+        # inputs (deal) — CLIENT = empresa (como no BoxMovers2026_i); fallback nome
         ws.cell(r, INP["DEAL_DATE"]).value = ddate
         ws.cell(r, INP["STATUS"]).value    = status_label
         ws.cell(r, INP["NOTAS"]).value     = notas
-        ws.cell(r, INP["CLIENT"]).value    = deal.get("client")
+        ws.cell(r, INP["CLIENT"]).value    = deal.get("company") or deal.get("client")
         ws.cell(r, INP["SKU"]).value       = int(sku) if str(sku).isdigit() else sku
         ws.cell(r, INP["QTY"]).value       = int(item.get("qty") or 1)
         ws.cell(r, INP["PV_WRT"]).value    = float(item.get("pvp") or 0)
         ws.cell(r, INP["APOIO"]).value     = float(item.get("so_neg") or 0)
         ws.cell(r, INP["EST_PAG"]).value   = "ABERTO"
-        ws.cell(r, INP["NET_COST"]).value  = float(item.get("fc_final") or data.get("ufc_raw") or data.get("pcl") or 0)
+        # NET COST c/ TAX = PCL (convenção do BoxMovers2026_i); fallback fc_final/ufc
+        ws.cell(r, INP["NET_COST"]).value  = round(float(data.get("pcl") or item.get("fc_final") or data.get("ufc_raw") or 0), 2)
         ws.cell(r, INP["TAXAS"]).value     = float(data.get("eis_total") or 0)
         ws.cell(r, INP["REBATES"]).value   = float(data.get("cgf_reb") or 0)
         ws.cell(r, INP["COMMENTS"]).value  = float(data.get("cgf_com") or 0)
@@ -146,6 +153,11 @@ def append_deal(deal: dict, business: str = "", status_label: str = "CONCLUÍDO"
         if data.get("cat"):
             ws.cell(r, PROD["DESC_CAT"]).value = data["cat"]
             ws.cell(r, PROD["CAT"]).value      = _num_part(data["cat"])
+        # SUPPLIER (código) do simulador → NAME SUPPLIER resolve por VLOOKUP local
+        _sup = _num_part(data.get("supplier") or "")
+        ws.cell(r, 14).value = _sup if _sup else None
+        # UN estático do simulador (a fórmula XLOOKUP→Query1 daria #REF aqui)
+        ws.cell(r, UN_COL).value = data.get("un") or None
         # negócio
         ws.cell(r, NEGOCIO_COL).value = business or ""
         r += 1
