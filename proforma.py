@@ -26,19 +26,43 @@ from openpyxl.styles import (
 )
 from openpyxl.utils import get_column_letter
 
-# ── Identidade do Vendedor (Silly Bee) ───────────────────────────────────────
-SELLER = {
-    "name":    "SILLY BEE, LDA",
-    "addr1":   "Rua Manuel Ferreira de Andrade, 10 – 9B",
-    "addr2":   "São Domingos de Benfica",
-    "addr3":   "1500-417 Lisboa · Portugal",
-    "vat":     "NIF: 518 674 134",
-    "email":   "tiago.cerqueira@transglobalchain.com",
-    "phone":   "+351 919 540 175",
-    "iban":    "PT50 0018 0003 6529 6626 0205 1",
-    "swift":   "TOTAPTPL",
-    "bank":    "Banco CGD",
+# ── Identidade do Vendedor — escolha Worten / Silly Bee ──────────────────────
+WORTEN = {
+    "name":       "WORTEN EQUIPAMENTOS PARA O LAR, SA",
+    "addr1":      "Rua João Mendonça, 529",
+    "addr2":      "Senhora da Hora",
+    "addr3":      "4464-501 Senhora da Hora · Portugal",
+    "cap_social": "Cap. Social: 1 400 000 EUR",
+    "vat":        "NIF/VAT: 503630330",
+    "reg_com":    "Cons. Reg. Com. Porto sob o nº 503630330",
+    "sirpeee":    "Nº SIRPEEE PT001257",
+    "email":      "",
+    "phone":      "",
+    "bank":       "Banco Santander Totta",
+    "nib":        "0018 6484 0200 0062 8998 2",
+    "iban":       "PT50 0018 6484 0200 0062 8998 2",
+    "swift":      "TOTAPTPL",
 }
+
+SILLY_BEE = {
+    "name":       "SILLY BEE, LDA",
+    "addr1":      "Rua Manuel Ferreira de Andrade, 10 – 9B",
+    "addr2":      "São Domingos de Benfica",
+    "addr3":      "1500-417 Lisboa · Portugal",
+    "cap_social": "",
+    "vat":        "NIF/VAT: 518 674 134",
+    "reg_com":    "",
+    "sirpeee":    "",
+    "email":      "tiago.cerqueira@transglobalchain.com",
+    "phone":      "+351 919 540 175",
+    "bank":       "Banco CGD",
+    "nib":        "",
+    "iban":       "PT50 0018 0003 6529 6626 0205 1",
+    "swift":      "TOTAPTPL",
+}
+
+SELLERS = {"Worten": WORTEN, "Silly Bee": SILLY_BEE}
+SELLER = WORTEN   # default (retrocompatibilidade)
 
 # ── Paleta ───────────────────────────────────────────────────────────────────
 NAVY   = "1B2744"
@@ -164,12 +188,14 @@ def _build_lines(deal: dict) -> list[dict]:
 
 # ── Gerador principal ─────────────────────────────────────────────────────────
 
-def generate_proforma(deal: dict, client: dict) -> bytes:
+def generate_proforma(deal: dict, client: dict, seller: str = "Worten") -> bytes:
     """
     Devolve bytes de um .xlsx com a Proforma Invoice pronta a descarregar.
     deal   — resultado de get_deal()
     client — resultado de get_client() ou {} quando não disponível
+    seller — "Worten" ou "Silly Bee" (empresa fornecedora)
     """
+    SELLER = SELLERS.get(seller, WORTEN)
     wb = Workbook()
     ws = wb.active
     ws.title = "Proforma Invoice"
@@ -227,13 +253,17 @@ def generate_proforma(deal: dict, client: dict) -> bytes:
         c.alignment = _align("left", "center")
         c.fill      = _fill(WHITE)
 
-    # Seller
-    _info_cell(4, 2, SELLER["name"],  bold=True, size=10)
-    _info_cell(5, 2, SELLER["addr1"])
-    _info_cell(6, 2, SELLER["addr2"])
-    _info_cell(7, 2, SELLER["addr3"])
-    _info_cell(8, 2, SELLER["vat"])
-    _info_cell(9, 2, SELLER["email"])
+    # Seller — 6 linhas (rows 4-9), campos do exemplo quando existem
+    _seller_lines = [
+        (SELLER["name"], True),
+        (SELLER.get("addr1", ""), False),
+        (" · ".join(filter(None, [SELLER.get("addr2", ""), SELLER.get("addr3", "")])), False),
+        (" · ".join(filter(None, [SELLER.get("cap_social", ""), SELLER.get("vat", "")])), False),
+        (SELLER.get("reg_com", ""), False),
+        (SELLER.get("sirpeee") or SELLER.get("email") or "", False),
+    ]
+    for _i, (_val, _b) in enumerate(_seller_lines):
+        _info_cell(4 + _i, 2, _val, bold=_b, size=10 if _b else 9)
 
     # Buyer — construir
     buyer = _client_lines(client, deal)
@@ -454,10 +484,12 @@ def generate_proforma(deal: dict, client: dict) -> bytes:
 
     bank_items = [
         ("Beneficiary", SELLER["name"]),
-        ("Bank",        SELLER["bank"]),
-        ("IBAN",        SELLER["iban"]),
-        ("SWIFT / BIC", SELLER["swift"]),
+        ("Bank",        SELLER.get("bank", "")),
+        ("NIB",         SELLER.get("nib", "")),
+        ("IBAN",        SELLER.get("iban", "")),
+        ("SWIFT / BIC", SELLER.get("swift", "")),
     ]
+    bank_items = [(_l, _v) for _l, _v in bank_items if _v]
 
     for k, (label, value) in enumerate(bank_items):
         r = BANK_ROW + 1 + k

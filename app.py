@@ -2367,19 +2367,21 @@ elif page == "📋  Deals em Curso":
                     # ── Proforma Invoice ───────────────────────────────────────
                     st.markdown("---")
                     st.markdown("**📄 Proforma Invoice**")
-                    _pf_col1, _pf_col2 = st.columns([4, 1])
+                    _pf_col1, _pf_col0, _pf_col2 = st.columns([3, 1.4, 1])
                     _pf_col1.caption(
                         "Gera automaticamente uma Proforma Invoice em Excel com os dados do deal, "
                         "cliente, linhas de produto, totais, condições comerciais e dados bancários."
                     )
+                    _pf_seller = _pf_col0.selectbox("Empresa fornecedora", ["Worten", "Silly Bee"],
+                                                    key=f"pf_seller_{did}")
                     _pf_col2.markdown("<br>", unsafe_allow_html=True)
                     try:
                         _pf_client = get_client(deal.get("client_id") or "") or {}
                         if not _pf_client:
                             # fallback: tentar pelo email do deal
                             _pf_client = get_client_by_email(str(deal.get("Email Cliente","") or "")) or {}
-                        _pf_bytes = generate_proforma(deal, _pf_client)
-                        _pf_fname = f"Proforma_{did}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+                        _pf_bytes = generate_proforma(deal, _pf_client, seller=_pf_seller)
+                        _pf_fname = f"Proforma_{_pf_seller.replace(' ','')}_{did}_{datetime.now().strftime('%Y%m%d')}.xlsx"
                         _pf_col2.download_button(
                             "⬇️ Download",
                             data=_pf_bytes,
