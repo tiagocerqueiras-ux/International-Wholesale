@@ -151,6 +151,8 @@ def append_deal(deal: dict, business: str = "", status_label: str = "CONCLUÍDO"
         n += 1
 
     tbl.ref = f"A2:{get_column_letter(NEGOCIO_COL)}{start + n - 1}"
+    if tbl.autoFilter is not None:
+        tbl.autoFilter.ref = tbl.ref     # manter alinhado (senão o Excel acusa erro)
     for i, tc in enumerate(tbl.tableColumns, start=1):
         if i in (list(STATIC_PRODUCT_COLS) + [UN_COL]) and getattr(tc, "calculatedColumnFormula", None) is not None:
             tc.calculatedColumnFormula = None
