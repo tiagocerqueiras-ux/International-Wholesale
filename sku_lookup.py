@@ -151,6 +151,15 @@ def _build_index_pandas(path: Path, entity_filter) -> dict:
         df = df[df["entity"].astype(str).str.strip().isin(allowed)]
 
     # ── Agrupar por SKU: uma linha por (SKU, armazém) ─────────────────────────
+    # Há várias linhas por (SKU, entidade): umas com custo/EAN, outras vazias.
+    # Ficar com a MELHOR (custo válido primeiro, depois maior stock) e não a última.
+    def _row_score(r):
+        _pcl  = _float_or_none(r.get("pcl"))
+        _uc   = _float_or_none(r.get("unit_cost"))
+        _cost = _pcl if (_pcl not in (None, 0)) else _uc
+        _has  = 1 if (_cost is not None and _cost > 0) else 0
+        return (_has, _float_or_none(r.get("stock")) or 0.0)
+
     by_sku: dict = {}
     for _, row in df.iterrows():
         key = str(row.get("sku_id", "") or "").strip()
@@ -158,8 +167,11 @@ def _build_index_pandas(path: Path, entity_filter) -> dict:
             continue
         if key.endswith(".0"):          # normalizar "5879983.0" → "5879983"
             key = key[:-2]
-        ent = str(row.get("entity", "") or "").strip()
-        by_sku.setdefault(key, {})[ent] = row
+        ent   = str(row.get("entity", "") or "").strip()
+        _slot = by_sku.setdefault(key, {})
+        _prev = _slot.get(ent)
+        if _prev is None or _row_score(row) > _row_score(_prev):
+            _slot[ent] = row
 
     def _entry_from_row(key, row):
         return {
