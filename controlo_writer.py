@@ -117,6 +117,7 @@ def append_deal(deal: dict, business: str = "", status_label: str = "CONCLUÍDO"
     n = 0
     for sku, item in sd.items():
         data = _enrich(item.get("data") or {}, sku)
+        ws.row_dimensions[r].hidden = False   # nunca herdar "hidden" de dimensões órfãs
         for c in range(1, NCOL_F + 1):
             src = templ[c]
             dst = ws.cell(row=r, column=c)
