@@ -84,6 +84,11 @@ ADMIN_EMAIL  = _get_secret("ADMIN_EMAIL",  "")
 BASE_DIR  = Path(__file__).parent.parent
 DEALS_FILE = BASE_DIR / "Deals_Tracking.xlsx"   # fallback local
 
+# Ficheiro de controlo unificado (registo de deals confirmados; estrutura BoxMovers
+# + coluna NEGÓCIO). Local — só escrito quando a app corre nesta máquina.
+CONTROLO_FILE = BASE_DIR / "Controlo_Deals_2026.xlsx"
+NEGOCIOS = ["Box Movers", "African Markets Wholesale", "Franchising"]
+
 # Simulador — usado apenas no rebuild local da cache de SKUs.
 # Em cloud (Railway) nenhum destes caminhos existe; a app usa o
 # simulator_index.json.gz empacotado no repositório.

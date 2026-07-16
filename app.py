@@ -447,6 +447,16 @@ if page == "🆕  Nova Cotação":
     email    = c4.text_input("Email do cliente *", key="nc_email", placeholder="Ex: contact@geppit.eu")
     language = c5.selectbox("Língua", ["EN", "PT", "ES", "FR"], key="nc_language",
                             help="Língua da proposta/emails. Podes alterar depois em Deals em Curso.")
+    from config import NEGOCIOS as _NEGOCIOS
+    _neg_def = 0
+    try:
+        import purchase_history as _phn
+        if (client and _phn.has_client(client)) or (company and _phn.has_client(company)):
+            _neg_def = _NEGOCIOS.index("African Markets Wholesale")
+    except Exception:
+        pass
+    nc_business = st.selectbox("Negócio", _NEGOCIOS, index=_neg_def, key="nc_business",
+                               help="Linha de negócio — registada no ficheiro de controlo ao confirmar.")
 
     # ── Estado do cliente (BD / CRM por email / novo) ─────────────────────────
     if st.session_state.get("nc_client_id"):
@@ -1370,7 +1380,8 @@ if page == "🆕  Nova Cotação":
                                    salesperson_email=_cu.get("email",""),
                                    company=company,
                                    client_id=st.session_state.get("nc_client_id"),
-                                   supplier_ids=st.session_state.get("nc_carrier"))
+                                   supplier_ids=st.session_state.get("nc_carrier"),
+                                   business=st.session_state.get("nc_business"))
 
             # Auto-registar/enriquecer cliente no CRM
             try:
@@ -2126,6 +2137,11 @@ elif page == "📋  Deals em Curso":
                                                        format="%.2f",
                                                        value=float(deal.get("Frete (€)") or 0),
                                                        key=f"ed_fr_{did}")
+                            from config import NEGOCIOS as _NEG_ED
+                            _biz_cur = str(deal.get("Negócio", "") or "")
+                            _ed_biz = st.selectbox("Negócio", _NEG_ED,
+                                index=_NEG_ED.index(_biz_cur) if _biz_cur in _NEG_ED else 0,
+                                key=f"ed_biz_{did}")
                             _ed_notes = st.text_area("Notas", value=str(deal.get("Notas", "") or ""),
                                                      key=f"ed_nt_{did}", height=80)
                             if st.button("💾 Guardar dados da proposta", key=f"ed_save_{did}",
@@ -2134,6 +2150,7 @@ elif page == "📋  Deals em Curso":
                                     did, client=_ed_client, company=_ed_company, country=_ed_country,
                                     client_email=_ed_email, incoterm=_ed_inc, payment_conditions=_ed_pay,
                                     vat=_ed_vat, freight=_ed_fre, availability=_ed_avail, notes=_ed_notes,
+                                    business=_ed_biz,
                                 ):
                                     st.success("✅ Dados da proposta atualizados!")
                                     st.rerun()
@@ -4865,8 +4882,8 @@ elif page == "⚙️  Administração":
 # ══════════════════════════════════════════════════════════════════════════════
 elif page == "📦  Adjudicadas":
     st.title("📦 Propostas Adjudicadas")
-    st.caption("Registo no BoxMovers de teste + layouts Admin/Stocks. Estado considerado adjudicado: **Encomenda Confirmada**.")
-    import boxmovers_writer, volumetria, layouts
+    st.caption("Registo no ficheiro de controlo + layouts Admin/Stocks. Estado considerado adjudicado: **Encomenda Confirmada**.")
+    import controlo_writer, volumetria, layouts
     from pathlib import Path as _Path
 
     _adj = [d for d in list_deals() if d.get("Status") == "Encomenda Confirmada"]
@@ -4922,12 +4939,14 @@ elif page == "📦  Adjudicadas":
 
         st.subheader("3. Ações")
         _a, _b = st.columns(2)
-        if _a.button("📦 Registar no BoxMovers2026_TESTE", use_container_width=True, type="primary"):
-            with st.spinner("A escrever no BoxMovers..."):
-                _n, _msg = boxmovers_writer.append_deal({
+        if _a.button("📦 Registar no ficheiro de controlo", use_container_width=True, type="primary"):
+            with st.spinner("A escrever no ficheiro de controlo..."):
+                _n, _msg = controlo_writer.append_deal({
                     "deal_id": deal.get("Deal ID"), "client": deal.get("Cliente"),
                     "status": deal.get("Status"), "created_at": deal.get("Data Criação"),
-                    "skus_detail": sd})
+                    "skus_detail": sd},
+                    business=str(deal.get("Negócio") or ""),
+                    status_label=str(deal.get("Status") or "CONCLUÍDO").upper())
             if _n:
                 st.success(_msg)
             else:

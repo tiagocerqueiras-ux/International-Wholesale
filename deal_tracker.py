@@ -105,6 +105,7 @@ _DB_TO_HEADER = {
     "cmr_number":         "CMR Nº",
     "packing_list":       "Packing List Nº",
     "supplier_ids":       "Fornecedor(es)",
+    "business":           "Negócio",
 }
 
 
@@ -138,6 +139,7 @@ def add_deal(
     status: str = "Rascunho",
     client_id=None,
     supplier_ids=None,
+    business=None,
 ) -> str:
     deal_id = _next_deal_id()
     now     = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -194,6 +196,7 @@ def add_deal(
         "company":            company,
         "client_id":          client_id,
         "supplier_ids":       supplier_ids,
+        "business":           business,
     }
 
     _get_client().table(TBL_DEALS).insert(row).execute()
@@ -220,19 +223,19 @@ def update_status(deal_id: str, new_status: str, notes: str = "") -> bool:
             upd["notes"] = notes
         client.table(TBL_DEALS).update(upd).eq("deal_id", deal_id).execute()
 
-        # Auto-registo no ficheiro de controlo BoxMovers quando é adjudicada
-        if new_status == "Encomenda Confirmada":
+        # Auto-registo no ficheiro de controlo unificado (confirmada em diante)
+        if new_status in _PURCHASE_STATUSES:
             try:
-                import boxmovers_writer as _bw
-                if not _bw.is_registered(deal_id):
+                import controlo_writer as _cw
+                if not _cw.is_registered(deal_id):
                     _d = get_deal(deal_id) or {}
-                    _bw.append_deal({
+                    _cw.append_deal({
                         "deal_id": deal_id, "client": _d.get("Cliente"),
                         "status": new_status, "created_at": _d.get("Data Criação"),
                         "skus_detail": _d.get("_skus_detail") or {},
-                    })
+                    }, business=str(_d.get("Negócio") or ""), status_label=new_status.upper())
             except Exception as _e:
-                print(f"[deal_tracker] auto BoxMovers erro: {_e}")
+                print(f"[deal_tracker] auto controlo erro: {_e}")
 
         return True
     except Exception as e:
@@ -293,6 +296,7 @@ def update_deal_operational(
 _EDITABLE_FIELDS = {
     "client", "company", "country", "client_email", "language", "incoterm",
     "payment_conditions", "vat", "freight", "availability", "notes", "client_id",
+    "business",
 }
 
 
