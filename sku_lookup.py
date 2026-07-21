@@ -158,7 +158,9 @@ def _build_index_pandas(path: Path, entity_filter) -> dict:
         _uc   = _float_or_none(r.get("unit_cost"))
         _cost = _pcl if (_pcl not in (None, 0)) else _uc
         _has  = 1 if (_cost is not None and _cost > 0) else 0
-        return (_has, _float_or_none(r.get("stock")) or 0.0)
+        # unit_cost válido primeiro: é o custo final real (evita fallback ao PCL)
+        _has_uc = 1 if (_uc is not None and _uc > 0) else 0
+        return (_has_uc, _has, _float_or_none(r.get("stock")) or 0.0)
 
     by_sku: dict = {}
     for _, row in df.iterrows():
@@ -234,6 +236,22 @@ def _build_index_pandas(path: Path, entity_filter) -> dict:
         entry["stock_701"]  = st701
         entry["stock_708"]  = st708
         entry["stock_2928"] = st2928
+
+        # Coalescer custos: se a linha escolhida não tiver unit_cost/pcl válidos,
+        # buscar a outra linha do mesmo SKU (708→701→2928) — evita cair no PCL
+        # quando o custo final real existe noutra linha.
+        if entry.get("cost_source") != "UFC" or not entry.get("pcl"):
+            _pref = [ent_rows.get(e) for e in ("708", "701", "2928") if e in ent_rows]
+            _pref += [r2 for k2, r2 in ent_rows.items() if k2 not in ("708", "701", "2928")]
+            _uc = next((_float_or_none(r2.get("unit_cost")) for r2 in _pref
+                        if _float_or_none(r2.get("unit_cost"))), None)
+            _pc = next((_float_or_none(r2.get("pcl")) for r2 in _pref
+                        if _float_or_none(r2.get("pcl"))), None)
+            if _pc and not entry.get("pcl"):
+                entry["pcl"] = _pc
+            if _uc and entry.get("cost_source") != "UFC":
+                entry.update(_get_ufc_raw(_uc, entry.get("pcl")))
+
         index[key] = entry
 
     return index
