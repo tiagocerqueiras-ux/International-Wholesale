@@ -1364,6 +1364,14 @@ if page == "🆕  Nova Cotação":
                                 type="primary", use_container_width=True)
 
         if (criar_deal or criar_email) and client and email:
+            def _qty_of(_s):
+                """Qtd por SKU — lê diretamente do estado do campo (fonte de verdade)."""
+                try:
+                    _q = int(float(st.session_state.get(f"qty_{_s}", qty_map.get(_s, 1))))
+                    return max(_q, 1)
+                except (TypeError, ValueError):
+                    return int(qty_map.get(_s, 1))
+
             skus_data = {}
             for sku in basket:
                 so_neg    = so_manual_map.get(sku, 0.0)
@@ -1372,13 +1380,24 @@ if page == "🆕  Nova Cotação":
                 _m_sku    = _mg_override.get(sku, s_margin_val)
                 pvp_unit  = _eff_pvp(sku, fc_final)
                 skus_data[sku] = {
-                    "qty":      qty_map[sku],
+                    "qty":      _qty_of(sku),
                     "data":     basket[sku],
                     "so_neg":   so_neg,
                     "fc_final": fc_final,
                     "pvp":      pvp_unit,
                     "margin":   _m_sku,
                 }
+
+            # Trava: várias linhas todas com Qtd=1 → quase de certeza quantidades por definir
+            if (len(skus_data) > 1
+                    and all(i["qty"] == 1 for i in skus_data.values())
+                    and not st.session_state.get("nc_confirm_qty1")):
+                st.error("🚫 **Todas as quantidades estão a 1.** Define as quantidades na coluna "
+                         "**Qtd** da tabela de produtos (secção 3) antes de criar o deal. "
+                         "Se for mesmo intencional (ex.: amostras), marca a confirmação abaixo e volta a clicar.")
+                st.checkbox("Confirmo: quero mesmo criar o deal com todas as quantidades a 1",
+                            key="nc_confirm_qty1")
+                st.stop()
 
             with st.spinner("A criar deal..."):
                 deal_id = add_deal(client=client, country=country, email=email,
