@@ -170,6 +170,19 @@ def _render_email_review():
     </div>
     """, unsafe_allow_html=True)
 
+    # Resumo do deal em revisão (evita enviar o deal errado / quantidades por definir)
+    try:
+        _rv_deal = get_deal(did) or {}
+        _rv_sd   = _rv_deal.get("_skus_detail") or {}
+        _rv_qty  = sum(int((i or {}).get("qty") or 1) for i in _rv_sd.values())
+        st.caption(f"📌 **{did}** · {client} · {len(_rv_sd)} SKU(s) · **{_rv_qty} unidades** · "
+                   f"{float(_rv_deal.get('Valor Proposto (€)') or pending.get('pvp_total') or 0):,.2f} €")
+        if _rv_sd and len(_rv_sd) > 1 and all(int((i or {}).get("qty") or 1) == 1 for i in _rv_sd.values()):
+            st.warning("⚠️ **Todas as quantidades deste deal estão a 1.** Confirma que é mesmo este o deal "
+                       "que queres enviar (pode existir um duplicado com as quantidades corretas).")
+    except Exception:
+        pass
+
     st.components.v1.html(html_body, height=500, scrolling=True)
     st.divider()
 
