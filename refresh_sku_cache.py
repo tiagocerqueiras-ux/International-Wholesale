@@ -67,10 +67,11 @@ def load_state() -> dict:
     return {}
 
 
-def save_state(src_mtime: float, data_hash: str, skus: int):
+def save_state(src_mtime: float, data_hash: str, skus: int, stk_mtime: float = 0.0):
     STATE.parent.mkdir(parents=True, exist_ok=True)
     STATE.write_text(json.dumps({
         "src_mtime":  src_mtime,
+        "stk_mtime":  stk_mtime,
         "data_hash":  data_hash,
         "skus":       skus,
         "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
@@ -106,12 +107,20 @@ def main() -> int:
         log(f"Estado inicializado: {len(idx):,} SKUs | rede {datetime.datetime.fromtimestamp(src_mtime):%Y-%m-%d %H:%M}.")
         return 0
 
-    # Gate 1 (barato): há versão nova na rede?
-    if not FORCE and src_mtime <= state.get("src_mtime", 0):
-        log(f"Sem versão nova (rede: {datetime.datetime.fromtimestamp(src_mtime):%Y-%m-%d %H:%M}). Nada a fazer.")
+    # Gate 1 (barato): há versão nova na rede? (simulador OU stocks diários STK WHs)
+    stk_mtime = 0.0
+    try:
+        import stock_whs as _swhs
+        _stk_f = _swhs.find_file()
+        stk_mtime = _stk_f.stat().st_mtime if _stk_f else 0.0
+    except Exception:
+        pass
+    if not FORCE and src_mtime <= state.get("src_mtime", 0) \
+            and stk_mtime <= state.get("stk_mtime", 0):
+        log(f"Sem versão nova (simulador/stocks). Nada a fazer.")
         return 0
 
-    log("Versão nova detetada — a reconstruir índice (1-3 min)...")
+    log("Versão nova detetada (simulador ou stocks) — a reconstruir índice (1-3 min)...")
     local = _make_local_copy(src)
     index = _build_index_pandas(local, ENTITY_FILTER)
     if not index:
@@ -125,14 +134,14 @@ def main() -> int:
     # Gate 2: os dados mudaram mesmo?
     if new_hash == state.get("data_hash") and not FORCE:
         log("O ficheiro foi regravado mas os DADOS são iguais — sem commit/push.")
-        save_state(src_mtime, new_hash, len(index))
+        save_state(src_mtime, new_hash, len(index), stk_mtime)
         return 0
 
     # Regenerar gz de produção
     payload = json.dumps(index, ensure_ascii=False).encode("utf-8")
     GZ.write_bytes(gzip.compress(payload, compresslevel=6))
     log(f"gz atualizado ({len(payload)/1024/1024:.1f} MB → {GZ.stat().st_size/1024/1024:.1f} MB).")
-    save_state(src_mtime, new_hash, len(index))
+    save_state(src_mtime, new_hash, len(index), stk_mtime)
 
     if NO_PUSH:
         log("--no-push: rebuild local concluído (sem git).")

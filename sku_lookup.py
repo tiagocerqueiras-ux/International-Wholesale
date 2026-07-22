@@ -204,12 +204,29 @@ def _build_index_pandas(path: Path, entity_filter) -> dict:
     def _stock_of(row):
         return _float_or_none(row.get("stock")) or 0.0
 
+    # Stocks DIÁRIOS por armazém (Pendentes África.xlsb › STK WHs) — quando o SKU
+    # existe no ficheiro, sobrepõem os stocks (desatualizados) do simulador.
+    try:
+        import stock_whs as _swhs
+        _stk_daily = _swhs.build()
+    except Exception:
+        _stk_daily = {}
+    if _stk_daily:
+        print(f"  Stocks diários (STK WHs): {len(_stk_daily):,} SKUs")
+
     index = {}
     for key, ent_rows in by_sku.items():
-        st701  = _stock_of(ent_rows["701"])  if "701"  in ent_rows else 0.0
-        st708  = _stock_of(ent_rows["708"])  if "708"  in ent_rows else 0.0
-        st2928 = _stock_of(ent_rows["2928"]) if "2928" in ent_rows else 0.0
+        _ov = _stk_daily.get(key)
+        if _ov is not None:
+            st701  = float(_ov.get("701")  or 0.0)
+            st708  = float(_ov.get("708")  or 0.0)
+            st2928 = float(_ov.get("2928") or 0.0)
+        else:
+            st701  = _stock_of(ent_rows["701"])  if "701"  in ent_rows else 0.0
+            st708  = _stock_of(ent_rows["708"])  if "708"  in ent_rows else 0.0
+            st2928 = _stock_of(ent_rows["2928"]) if "2928" in ent_rows else 0.0
         total_stock = st701 + st708 + st2928
+        _ent_stock = {"701": st701, "708": st708, "2928": st2928}
 
         # Escolha da linha de PREÇO (stock-aware):
         #   1) B2C (708›701) COM stock
@@ -218,7 +235,7 @@ def _build_index_pandas(path: Path, entity_filter) -> dict:
         #   4) 2928 SEM stock (último recurso: SKU só existe em 2928)
         chosen = None
         for e in ("708", "701"):
-            if e in ent_rows and _stock_of(ent_rows[e]) > 0:
+            if e in ent_rows and _ent_stock[e] > 0:
                 chosen = ent_rows[e]; break
         if chosen is None and st2928 > 0:
             chosen = ent_rows.get("2928")
@@ -236,6 +253,7 @@ def _build_index_pandas(path: Path, entity_filter) -> dict:
         entry["stock_701"]  = st701
         entry["stock_708"]  = st708
         entry["stock_2928"] = st2928
+        entry["stock_src"]  = "whs_diario" if _ov is not None else "simulador"
 
         # Coalescer custos: se a linha escolhida não tiver unit_cost/pcl válidos,
         # buscar a outra linha do mesmo SKU (708→701→2928) — evita cair no PCL
