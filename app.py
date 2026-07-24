@@ -425,6 +425,13 @@ if page == "🆕  Nova Cotação":
     # ── Prefill a partir do CRM ───────────────────────────────────────────────
     _crm_pre = st.session_state.pop("crm_prefill", {})
 
+    # Prefill diferido (ex.: cliente novo criado no expander, que fica DEPOIS dos
+    # campos — os widgets só podem ser escritos ANTES de serem instanciados)
+    _nc_apply = st.session_state.pop("nc_apply_fields", None)
+    if _nc_apply:
+        for _k, _v in _nc_apply.items():
+            st.session_state[_k] = _v
+
     # ── 1. Cliente ────────────────────────────────────────────────────────────
     st.subheader("1. Dados do Cliente")
 
@@ -508,10 +515,13 @@ if page == "🆕  Nova Cotação":
         _newid = client_form.render_client_form(ns="nc_new")
         if _newid:
             _nc = get_client(_newid) or {}
-            st.session_state["nc_client"]    = _nc.get("contact_name") or _nc.get("company_name") or ""
-            st.session_state["nc_company"]   = _nc.get("company_name") or ""
-            st.session_state["nc_country"]   = _nc.get("country") or ""
-            st.session_state["nc_email"]     = _nc.get("contact_email") or ""
+            # widgets nc_* já instanciados neste run → aplicar via staging no próximo
+            st.session_state["nc_apply_fields"] = {
+                "nc_client":  _nc.get("contact_name") or _nc.get("company_name") or "",
+                "nc_company": _nc.get("company_name") or "",
+                "nc_country": _nc.get("country") or "",
+                "nc_email":   _nc.get("contact_email") or "",
+            }
             st.session_state["nc_client_id"] = _newid
             st.session_state["nc_found"]     = _nc.get("company_name")
             st.rerun()
