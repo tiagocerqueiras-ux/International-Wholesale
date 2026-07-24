@@ -675,9 +675,12 @@ if page == "🆕  Nova Cotação":
     # ── Importar lista de SKUs/EANs de ficheiro ───────────────────────────────
     with st.expander("📥 Importar lista de produtos (CSV / TXT / XLSX)", expanded=False):
         st.caption(
-            "Colunas aceites (XLSX/CSV): **Referência**/SKU ou **EAN** (obrigatória) e, opcionais, "
-            "**Quantidade**, **Apoio (€)** e **Margem (%)** ou **Margem (€/un.)**. "
-            "Sem cabeçalho reconhecido, usa a 1.ª coluna. TXT lê apenas códigos."
+            "Só a coluna **Referência**/SKU (ou **EAN**) é obrigatória; todas as outras são "
+            "facultativas e podem vir em qualquer subconjunto — ex.: só Referência + Quantidade "
+            "+ Preço Final. Colunas reconhecidas: **Quantidade**, **Apoio (€)**, **Margem (%)** "
+            "ou **Margem (€/un.)** e **Preço Final** (aceita também 'Preço Inicial'/'Preço "
+            "unitário' — aplicado como preço fixo por linha). Sem cabeçalho reconhecido, usa a "
+            "1.ª coluna. TXT lê apenas códigos."
         )
         upl_basket = st.file_uploader(
             "Ficheiro com SKUs ou EANs",
@@ -694,9 +697,10 @@ if page == "🆕  Nova Cotação":
             import io as _io_tmpl
             from openpyxl import Workbook as _WB_tmpl
             _wbt = _WB_tmpl(); _wst = _wbt.active; _wst.title = "Proposta"
-            _wst.append(["Referência", "Quantidade", "Apoio (€)", "Margem (%)", "Margem (€/un.)"])
-            _wst.append(["8093098", 12, 0, 15, ""])
-            _wst.append(["8420642", 3, 0, 12, ""])
+            _wst.append(["Referência", "Quantidade", "Apoio (€)", "Margem (%)",
+                         "Margem (€/un.)", "Preço Final"])
+            _wst.append(["8093098", 12, 0, 15, "", ""])
+            _wst.append(["8420642", 3, "", "", "", 27.34])
             _buft = _io_tmpl.BytesIO(); _wbt.save(_buft)
             st.download_button(
                 "⬇️ Descarregar template (XLSX)", _buft.getvalue(),
@@ -751,7 +755,8 @@ if page == "🆕  Nova Cotação":
                     _c_mg_pct = _pick(_cols, ("margem (%)", "margem %", "margin (%)", "margem", "margin"))
                     _c_mg_eur = _pick(_cols, ("margem (€/un.)", "margem (€)", "margem valor"))
                     _c_pf   = _pick(_cols, ("preço final", "preco final", "preço final (€)", "preco final (€)",
-                                            "pvp final", "price"))
+                                            "preço inicial", "preco inicial", "preço unitário", "preco unitario",
+                                            "preço (€)", "preco (€)", "pvp final", "price"))
                     for _, _r in _df.iterrows():
                         _code = str(_r.get(_c_code) or "").strip()
                         if not _code or _code.lower() == "nan":
