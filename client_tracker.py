@@ -122,12 +122,29 @@ def find_client(query: str) -> dict | None:
                 return res.data[0]
         except Exception:
             pass
-    # 2) fallback: match parcial no nome da empresa
+    # 2) fallback: match parcial em vários campos (empresa, razão social,
+    #    contacto, emails) — apanha "Bidsense" vs "Bid Sense"/"Bidsense SRL"
     try:
+        _pat = f"%{q}%"
         res = (client.table(TBL_CLIENTS).select("*")
-               .ilike("company_name", f"%{q}%").limit(1).execute())
+               .or_(f"company_name.ilike.{_pat},legal_name.ilike.{_pat},"
+                    f"contact_name.ilike.{_pat},contact_email.ilike.{_pat},"
+                    f"billing_email.ilike.{_pat}")
+               .limit(1).execute())
         if res.data:
             return res.data[0]
+    except Exception:
+        pass
+    # 3) último recurso: ignorar espaços ("bidsense" vs "bid sense")
+    try:
+        _qns = q.replace(" ", "").lower()
+        if len(_qns) >= 4:
+            res = (client.table(TBL_CLIENTS)
+                   .select("*").limit(2000).execute())
+            for c in (res.data or []):
+                for f in ("company_name", "legal_name"):
+                    if _qns in str(c.get(f) or "").replace(" ", "").lower():
+                        return c
     except Exception:
         pass
     return None
