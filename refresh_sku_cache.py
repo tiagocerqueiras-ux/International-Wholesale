@@ -79,7 +79,9 @@ def save_state(src_mtime: float, data_hash: str, skus: int, stk_mtime: float = 0
 
 
 def data_hash(index: dict) -> str:
-    raw = json.dumps(index, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    # excluir _meta (timestamp de build) — senão o hash muda a cada rebuild
+    raw = json.dumps({k: v for k, v in index.items() if k != "_meta"},
+                     ensure_ascii=False, sort_keys=True).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
 
 

@@ -644,6 +644,26 @@ if page == "🆕  Nova Cotação":
     # ── 3. Produtos ───────────────────────────────────────────────────────────
     st.subheader("3. Produtos a Cotar")
 
+    # Frescura dos preços: quando o índice foi gerado e de que versão do simulador
+    try:
+        from datetime import datetime as _dtf
+        _meta = (load_index() or {}).get("_meta") or {}
+        _built = _meta.get("built_at", "")
+        _srcv  = _meta.get("src_mtime", "")
+        if _built:
+            _age_h = (_dtf.now() - _dtf.fromisoformat(_built)).total_seconds() / 3600
+            _fmt = lambda s: s.replace("T", " ")[:16]
+            _msg = (f"📈 Preços do simulador — versão do ficheiro: **{_fmt(_srcv)}** · "
+                    f"índice gerado: **{_fmt(_built)}**"
+                    + (" · stocks diários ✅" if _meta.get("stocks_daily") else " · ⚠️ sem stocks diários"))
+            if _age_h > 8:
+                st.warning(_msg + f" — **há {_age_h:.0f}h sem atualizar**: os custos podem "
+                                  "estar desatualizados face ao simulador. Confirma valores sensíveis.")
+            else:
+                st.caption(_msg)
+    except Exception:
+        pass
+
     if "product_basket" not in st.session_state:
         st.session_state["product_basket"] = {}
     if "so_manual" not in st.session_state:

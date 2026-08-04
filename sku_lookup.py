@@ -272,6 +272,17 @@ def _build_index_pandas(path: Path, entity_filter) -> dict:
 
         index[key] = entry
 
+    # Metadados de frescura (mostrados na app): quando foi gerado e de que versão
+    import datetime as _dt
+    try:
+        _src_mtime = _dt.datetime.fromtimestamp(Path(path).stat().st_mtime).isoformat(timespec="minutes")
+    except Exception:
+        _src_mtime = ""
+    index["_meta"] = {
+        "built_at":  _dt.datetime.now().isoformat(timespec="minutes"),
+        "src_mtime": _src_mtime,
+        "stocks_daily": bool(_stk_daily),
+    }
     return index
 
 
