@@ -47,10 +47,43 @@ def _cell(row, col_idx):
         return None
 
 
-def _get_ufc_raw(unit_cost, pcl) -> dict:
-    ufc_raw = unit_cost if unit_cost is not None else pcl
-    source  = "UFC" if unit_cost is not None else ("PCL" if pcl is not None else None)
-    return {"ufc_raw": ufc_raw, "cost_source": source}
+def _calc_unit_final_cost(row) -> float | None:
+    """UNIT FINAL COST recalculado a partir dos componentes do simulador.
+
+    A coluna AH (UNIT FINAL COST) é uma fórmula e o ficheiro exportado não
+    guarda valores em cache — chega sempre vazia. Sem isto o índice cai
+    sempre no PCL (custo bruto, sem rebates), o que sobrevaloriza o custo em
+    ~15 % e faz cotar acima do que devia.
+
+        AH = +O +P -Q +U -O*(V+W+AG) +X -AC -AD -AE -AF
+    """
+    pcl = _float_or_none(row.get("pcl"))
+    if pcl is None:
+        return None
+
+    def _n(field):
+        return _float_or_none(row.get(field)) or 0.0
+
+    ufc = (pcl
+           + _n("eis_total") - _n("eis_da") + _n("landed")
+           - pcl * (_n("cgf_reb") + _n("cgf_com") + _n("bank"))
+           + _n("eco_inv")
+           - _n("sell_in") - _n("sell_out") - _n("eas") - _n("prstk"))
+    return round(ufc, 6)
+
+
+def _is_ufc(source) -> bool:
+    """True se o custo já é o UNIT FINAL COST (da coluna ou recalculado)."""
+    return str(source or "").startswith("UFC")
+
+
+def _get_ufc_raw(unit_cost, pcl, calc_cost=None) -> dict:
+    """Custo unitário a usar, por ordem: coluna AH › recalculado › PCL."""
+    if unit_cost is not None:
+        return {"ufc_raw": unit_cost, "cost_source": "UFC"}
+    if calc_cost is not None:
+        return {"ufc_raw": calc_cost, "cost_source": "UFC_CALC"}
+    return {"ufc_raw": pcl, "cost_source": "PCL" if pcl is not None else None}
 
 
 # ── Supabase Storage ──────────────────────────────────────────────────────────
@@ -155,7 +188,7 @@ def _build_index_pandas(path: Path, entity_filter) -> dict:
     # Ficar com a MELHOR (custo válido primeiro, depois maior stock) e não a última.
     def _row_score(r):
         _pcl  = _float_or_none(r.get("pcl"))
-        _uc   = _float_or_none(r.get("unit_cost"))
+        _uc   = _float_or_none(r.get("unit_cost")) or _calc_unit_final_cost(r)
         _cost = _pcl if (_pcl not in (None, 0)) else _uc
         _has  = 1 if (_cost is not None and _cost > 0) else 0
         # unit_cost válido primeiro: é o custo final real (evita fallback ao PCL)
@@ -198,6 +231,7 @@ def _build_index_pandas(path: Path, entity_filter) -> dict:
             **_get_ufc_raw(
                 _float_or_none(row.get("unit_cost")),
                 _float_or_none(row.get("pcl")),
+                _calc_unit_final_cost(row),
             ),
         }
 
@@ -258,17 +292,19 @@ def _build_index_pandas(path: Path, entity_filter) -> dict:
         # Coalescer custos: se a linha escolhida não tiver unit_cost/pcl válidos,
         # buscar a outra linha do mesmo SKU (708→701→2928) — evita cair no PCL
         # quando o custo final real existe noutra linha.
-        if entry.get("cost_source") != "UFC" or not entry.get("pcl"):
+        if not _is_ufc(entry.get("cost_source")) or not entry.get("pcl"):
             _pref = [ent_rows.get(e) for e in ("708", "701", "2928") if e in ent_rows]
             _pref += [r2 for k2, r2 in ent_rows.items() if k2 not in ("708", "701", "2928")]
             _uc = next((_float_or_none(r2.get("unit_cost")) for r2 in _pref
                         if _float_or_none(r2.get("unit_cost"))), None)
             _pc = next((_float_or_none(r2.get("pcl")) for r2 in _pref
                         if _float_or_none(r2.get("pcl"))), None)
+            _cc = next((_calc_unit_final_cost(r2) for r2 in _pref
+                        if _calc_unit_final_cost(r2)), None)
             if _pc and not entry.get("pcl"):
                 entry["pcl"] = _pc
-            if _uc and entry.get("cost_source") != "UFC":
-                entry.update(_get_ufc_raw(_uc, entry.get("pcl")))
+            if (_uc or _cc) and not _is_ufc(entry.get("cost_source")):
+                entry.update(_get_ufc_raw(_uc, entry.get("pcl"), _cc))
 
         index[key] = entry
 
