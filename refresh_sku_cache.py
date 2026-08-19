@@ -39,6 +39,11 @@ sys.path.insert(0, str(HERE))
 from config import SIMULATOR_FILE, ENTITY_FILTER
 from sku_lookup import _make_local_copy, _build_index_pandas, _save_local_cache
 
+# Fração mínima de SKUs que tem de trazer o UNIT FINAL COST (coluna AH do
+# simulador, recalculada). Abaixo disto o índice não é publicado: já aconteceu
+# cair 100 % no PCL sem ninguém dar por isso, e o PCL cota ~15 % acima do real.
+MIN_UFC_COVERAGE = 0.95
+
 STATE   = HERE / ".cache" / "last_refresh.json"
 GZ      = HERE / "simulator_index.json.gz"
 LOGFILE = HERE / "refresh_sku_cache.log"
@@ -129,6 +134,19 @@ def main() -> int:
         log("ERRO: índice vazio — abortado sem escrever nada.")
         return 3
     log(f"{len(index):,} SKUs indexados.")
+
+    # Gate de sanidade: o custo tem de ser o UNIT FINAL COST, nunca o PCL.
+    # Se as colunas do simulador mudarem de sítio, o cálculo cai em silêncio no
+    # PCL e passamos a cotar acima do real — melhor não publicar de todo.
+    _rows = [v for k, v in index.items() if k != "_meta"]
+    _ufc  = sum(1 for v in _rows if str(v.get("cost_source") or "").startswith("UFC"))
+    _cov  = _ufc / len(_rows) if _rows else 0.0
+    log(f"Custo final (UNIT FINAL COST) em {_ufc:,}/{len(_rows):,} SKUs ({_cov:.1%}).")
+    if _cov < MIN_UFC_COVERAGE:
+        log(f"ERRO: só {_cov:.1%} dos SKUs têm custo final (mínimo "
+            f"{MIN_UFC_COVERAGE:.0%}) — o resto cai no PCL. Confirma "
+            f"SIMULATOR_COLS vs colunas do simulador. Abortado sem publicar.")
+        return 7
 
     new_hash = data_hash(index)
     _save_local_cache(index)

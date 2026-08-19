@@ -167,7 +167,7 @@ def cmd_new():
         skus_data[sku] = {"qty": qty, "data": data or {}}
 
         if data:
-            uc       = data.get("unit_cost")
+            uc       = data.get("ufc_raw")   # UNIT FINAL COST (col. AH recalculada)
             eis_da   = data.get("eis_da", 0)
             sell_in  = data.get("sell_in")
             sell_out = data.get("sell_out")

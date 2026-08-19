@@ -1003,6 +1003,8 @@ if page == "🆕  Nova Cotação":
                 else:              # Exportação — EIS deduzido do PCL
                     fc_sim = round(ufc_raw - _eis_deduct + sell_out, 4)
                 cols[4].markdown(f"**{fmt4(fc_sim)}**")
+                if d.get("cost_source") == "PCL":
+                    cols[4].caption("⚠️ PCL bruto — sem custo final")
             else:
                 fc_sim = None
                 cols[4].markdown("⚠️ N/D")
@@ -2841,6 +2843,8 @@ elif page == "🏭  Pedido Fornecedor":
             if ufc_raw is not None:
                 fc_sim = round(ufc_raw - eis_total + sell_out, 4)
                 sc[4].markdown(f"**{fmt4(fc_sim)}**")
+                if d.get("cost_source") == "PCL":
+                    sc[4].caption("⚠️ PCL bruto — sem custo final")
             else:
                 fc_sim = None
                 sc[4].markdown("⚠️ N/D")

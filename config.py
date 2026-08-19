@@ -175,12 +175,25 @@ SIMULATOR_COLS = {
     "eis_total": 16,
     "eis_da":    17,
     "eis_reee":  18,
+    "landed":    21,
     "cgf_reb":   22,
     "cgf_com":   23,
+    "eco_inv":   24,
     "sell_in":   29,
     "sell_out":  30,
+    "eas":       31,
+    "prstk":     32,
+    "bank":      33,
     "unit_cost": 34,
 }
+
+# UNIT FINAL COST (col. 34 / AH) é uma FÓRMULA e o ficheiro exportado não traz
+# valores em cache — vem sempre vazia (0 de 367 837 linhas). Por isso o custo é
+# recalculado em sku_lookup._calc_unit_final_cost a partir das colunas acima,
+# replicando a fórmula do simulador:
+#   AH = +O +P -Q +U -O*(V+W+AG) +X -AC -AD -AE -AF
+#      = PCL + EIS - EIS_DA + LANDED - PCL*(CGF_REB + CGF_COM + BANK)
+#        + ECO_INVOICE - SELL_IN - SELL_OUT - EAS - PRSTK
 
 # ── Identidade comercial ───────────────────────────────────────────────────────
 USER_NAME    = "Tiago Cerqueira"
