@@ -1,33 +1,45 @@
 """
-stock_whs.py — Stocks diários por armazém (Pendentes África.xlsb, tab STK WHs)
-==============================================================================
-O simulador African Markets tem stocks desatualizados; a fonte diária correta é
-o ficheiro SharePoint "Pendentes África.xlsb" (site STOCK & SPACE MANAGEMENT),
-sincronizado via OneDrive. Este módulo lê a tab STK WHs e devolve, por SKU e
-armazém: disponível = STOCK_ON_HAND − TSF_RESERVED_QTY − NON_SELLABLE_QTY.
+stock_whs.py — Stocks diários por armazém (Pendentes África*.xlsb, tab STK WHs)
+===============================================================================
+OPT-IN: só é usado quando config.DAILY_STOCKS_ENABLED=1. Por defeito a app usa a
+coluna "STOCK DISPONÍVEL" do próprio simulador (decisão 2026-09-03: o ficheiro
+STK WHs esteve 6 semanas parado — renomeado pelo BI e sincronizado noutra pasta —
+sem que a app desse por isso, servindo stocks errados).
 
-Cache em .cache/stock_whs.json com gate por mtime (o xlsb tem ~76MB; a leitura
-demora ~1-2 min e só é refeita quando o ficheiro muda).
+Quando ligado: lê o ficheiro SharePoint "Pendentes África*.xlsb" mais recente
+(site STOCK & SPACE MANAGEMENT, sincronizado via OneDrive), tab STK WHs, e devolve
+por SKU e armazém: disponível = STOCK_ON_HAND − TSF_RESERVED_QTY − NON_SELLABLE_QTY.
+
+Cache em .cache/stock_whs.json com gate por (ficheiro, mtime) — o xlsb tem ~77MB e
+a leitura demora ~1-2 min.
 """
 import json
 from pathlib import Path
 
-_CANDIDATES = [
-    Path.home() / "OneDrive - Worten" / "STOCK & SPACE MANAGEMENT - África" / "Pendentes África.xlsb",
-    Path.home() / "Worten" / "STOCK & SPACE MANAGEMENT - África" / "Pendentes África.xlsb",
+_ROOTS = [
+    Path.home() / "OneDrive - Worten" / "STOCK & SPACE MANAGEMENT - África",
+    Path.home() / "Worten" / "STOCK & SPACE MANAGEMENT - África",
 ]
+# O BI muda o nome quando republica (Pendentes África.xlsb → Pendentes África2.xlsb)
+# e cada raiz de sync pode ficar com uma cópia antiga parada — escolher sempre o
+# ficheiro MAIS RECENTE por mtime em qualquer das raízes.
+_PATTERN = "Pendentes África*.xlsb"
 CACHE = Path(__file__).resolve().parent / ".cache" / "stock_whs.json"
 SHEET = "STK WHs"
 
 
 def find_file():
-    for c in _CANDIDATES:
+    best = None
+    for root in _ROOTS:
         try:
-            if c.exists():
-                return c
+            for c in root.glob(_PATTERN):
+                if c.name.startswith("~$"):
+                    continue
+                if best is None or c.stat().st_mtime > best.stat().st_mtime:
+                    best = c
         except Exception:
             continue
-    return None
+    return best
 
 
 def _norm_sku(v) -> str:
@@ -40,11 +52,12 @@ def build(force: bool = False) -> dict:
     src = find_file()
     if src is None:
         return {}
-    # cache válida?
+    # cache válida? (mesmo ficheiro E mesma versão)
     if CACHE.exists() and not force:
         try:
             payload = json.loads(CACHE.read_text(encoding="utf-8"))
-            if payload.get("_mtime") == src.stat().st_mtime:
+            if payload.get("_mtime") == src.stat().st_mtime \
+                    and payload.get("_src", str(src)) == str(src):
                 return payload.get("stocks", {})
         except Exception:
             pass
@@ -89,7 +102,8 @@ def build(force: bool = False) -> dict:
         return {}
     try:
         CACHE.parent.mkdir(parents=True, exist_ok=True)
-        CACHE.write_text(json.dumps({"_mtime": src.stat().st_mtime, "stocks": stocks},
+        CACHE.write_text(json.dumps({"_mtime": src.stat().st_mtime, "_src": str(src),
+                                     "stocks": stocks},
                                     ensure_ascii=False), encoding="utf-8")
     except Exception:
         pass

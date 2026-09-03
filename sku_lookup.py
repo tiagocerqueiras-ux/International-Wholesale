@@ -238,15 +238,31 @@ def _build_index_pandas(path: Path, entity_filter) -> dict:
     def _stock_of(row):
         return _float_or_none(row.get("stock")) or 0.0
 
-    # Stocks DIÁRIOS por armazém (Pendentes África.xlsb › STK WHs) — quando o SKU
-    # existe no ficheiro, sobrepõem os stocks (desatualizados) do simulador.
-    try:
-        import stock_whs as _swhs
-        _stk_daily = _swhs.build()
-    except Exception:
-        _stk_daily = {}
+    # Stocks DIÁRIOS por armazém (Pendentes África*.xlsb › STK WHs) — só quando
+    # config.DAILY_STOCKS_ENABLED. Por defeito a disponibilidade vem da coluna
+    # "STOCK DISPONÍVEL" do próprio simulador (decisão 2026-09-03).
+    import config as _cfg
+    import datetime as _dt
+    _use_daily = bool(getattr(_cfg, "DAILY_STOCKS_ENABLED", False))
+    _stk_daily = {}
+    _stk_file, _stk_mtime = "", ""
+    if _use_daily:
+        try:
+            import stock_whs as _swhs
+            _f = _swhs.find_file()
+            if _f is not None:
+                _stk_file  = _f.name
+                _stk_mtime = _dt.datetime.fromtimestamp(_f.stat().st_mtime).isoformat(timespec="minutes")
+            _stk_daily = _swhs.build()
+        except Exception as _e:
+            print(f"  ⚠  Stocks diários: erro a ler STK WHs ({_e})")
+            _stk_daily = {}
     if _stk_daily:
-        print(f"  Stocks diários (STK WHs): {len(_stk_daily):,} SKUs")
+        print(f"  Stocks diários (STK WHs): {len(_stk_daily):,} SKUs — {_stk_file} de {_stk_mtime}")
+    elif _use_daily:
+        print("  ⚠  DAILY_STOCKS_ENABLED ligado mas sem stocks diários — stock cai na coluna do simulador.")
+    else:
+        print("  Stock: coluna STOCK DISPONÍVEL do simulador (701+708+2928)")
 
     index = {}
     for key, ent_rows in by_sku.items():
@@ -309,7 +325,6 @@ def _build_index_pandas(path: Path, entity_filter) -> dict:
         index[key] = entry
 
     # Metadados de frescura (mostrados na app): quando foi gerado e de que versão
-    import datetime as _dt
     try:
         _src_mtime = _dt.datetime.fromtimestamp(Path(path).stat().st_mtime).isoformat(timespec="minutes")
     except Exception:
@@ -318,6 +333,9 @@ def _build_index_pandas(path: Path, entity_filter) -> dict:
         "built_at":  _dt.datetime.now().isoformat(timespec="minutes"),
         "src_mtime": _src_mtime,
         "stocks_daily": bool(_stk_daily),
+        "stock_source": "whs_diario" if _stk_daily else "simulador",
+        "stk_file":  _stk_file if _stk_daily else "",
+        "stk_mtime": _stk_mtime if _stk_daily else "",
     }
     return index
 

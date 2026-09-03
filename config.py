@@ -155,6 +155,15 @@ EMAILS_OUT_DIR  = Path(__file__).parent / "emails_out"
 # é a SOMA das 3 localizações. Lógica em sku_lookup._build_index_pandas.
 ENTITY_FILTER   = {"701", "708", "2928"}
 ENTITY_PRIORITY = ["708", "701"]
+
+# Fonte da disponibilidade de stock no índice:
+#   False (default) -> coluna "STOCK DISPONÍVEL" do próprio simulador (701+708+2928)
+#   True            -> sobrepõe com os stocks diários do Pendentes África*.xlsb (STK WHs)
+# Decisão 2026-09-03: usar apenas o simulador (o STK WHs ficou 6 semanas parado sem se notar).
+# Nota: a coluna do simulador é um snapshot à hora da exportação do BI e difere do STK WHs
+# (on_hand − reservado − não vendável) em ~26% dos SKUs comuns (mediana 3 un.); a definição
+# exata/hora do snapshot está por confirmar com o BI.
+DAILY_STOCKS_ENABLED = str(_get_secret("DAILY_STOCKS_ENABLED", "0")).strip().lower() in {"1", "true", "yes"}
 WH_LABELS       = {"701": "701 (B2C GD)", "708": "708 (B2C Outros)", "2928": "2928 (B2B)"}
 SIMULATOR_HEADER_ROW = 5
 

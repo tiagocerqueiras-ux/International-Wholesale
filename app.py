@@ -644,21 +644,28 @@ if page == "🆕  Nova Cotação":
     # ── 3. Produtos ───────────────────────────────────────────────────────────
     st.subheader("3. Produtos a Cotar")
 
-    # Frescura dos preços: quando o índice foi gerado e de que versão do simulador
+    # Frescura de preços E stock: idade da VERSÃO do simulador (src_mtime), não do rebuild.
+    # O BI publica de poucos em poucos dias → avisar a partir de 3 dias, alarme a partir de 7.
     try:
         from datetime import datetime as _dtf
         _meta = (load_index() or {}).get("_meta") or {}
         _built = _meta.get("built_at", "")
-        _srcv  = _meta.get("src_mtime", "")
+        _srcv  = _meta.get("src_mtime", "") or _built
         if _built:
-            _age_h = (_dtf.now() - _dtf.fromisoformat(_built)).total_seconds() / 3600
+            _age_h = (_dtf.now() - _dtf.fromisoformat(_srcv)).total_seconds() / 3600
             _fmt = lambda s: s.replace("T", " ")[:16]
-            _msg = (f"📈 Preços do simulador — versão do ficheiro: **{_fmt(_srcv)}** · "
-                    f"índice gerado: **{_fmt(_built)}**"
-                    + (" · stocks diários ✅" if _meta.get("stocks_daily") else " · ⚠️ sem stocks diários"))
-            if _age_h > 8:
-                st.warning(_msg + f" — **há {_age_h:.0f}h sem atualizar**: os custos podem "
-                                  "estar desatualizados face ao simulador. Confirma valores sensíveis.")
+            _src_txt = (" · stocks diários ✅" + (f" ({_meta.get('stk_mtime','')[:16].replace('T',' ')})" if _meta.get("stk_mtime") else "")
+                        if _meta.get("stocks_daily")
+                        else (" · stock: simulador 📦" if _meta.get("stock_source") == "simulador"
+                              else " · ⚠️ sem stocks diários"))
+            _msg = (f"📈 Preços e stock do simulador de **{_fmt(_srcv)}** · "
+                    f"índice gerado: **{_fmt(_built)}**" + _src_txt)
+            if _age_h > 7 * 24:
+                st.error(_msg + f" — **simulador com {_age_h/24:.0f} dias**: stock e custos podem estar "
+                                "desatualizados (BI sem publicar ou tarefa de refresh parada). Confirma antes de cotar.")
+            elif _age_h > 3 * 24:
+                st.warning(_msg + f" — **há {_age_h/24:.0f} dias sem versão nova do simulador**: "
+                                  "confirma stock e custos sensíveis.")
             else:
                 st.caption(_msg)
     except Exception:

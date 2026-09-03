@@ -114,14 +114,16 @@ def main() -> int:
         log(f"Estado inicializado: {len(idx):,} SKUs | rede {datetime.datetime.fromtimestamp(src_mtime):%Y-%m-%d %H:%M}.")
         return 0
 
-    # Gate 1 (barato): há versão nova na rede? (simulador OU stocks diários STK WHs)
+    # Gate 1 (barato): há versão nova na rede? (simulador OU, se ativo, stocks diários STK WHs)
     stk_mtime = 0.0
-    try:
-        import stock_whs as _swhs
-        _stk_f = _swhs.find_file()
-        stk_mtime = _stk_f.stat().st_mtime if _stk_f else 0.0
-    except Exception:
-        pass
+    import config as _cfg
+    if getattr(_cfg, "DAILY_STOCKS_ENABLED", False):
+        try:
+            import stock_whs as _swhs
+            _stk_f = _swhs.find_file()
+            stk_mtime = _stk_f.stat().st_mtime if _stk_f else 0.0
+        except Exception:
+            pass
     if not FORCE and src_mtime <= state.get("src_mtime", 0) \
             and stk_mtime <= state.get("stk_mtime", 0):
         log(f"Sem versão nova (simulador/stocks). Nada a fazer.")
@@ -134,6 +136,9 @@ def main() -> int:
         log("ERRO: índice vazio — abortado sem escrever nada.")
         return 3
     log(f"{len(index):,} SKUs indexados.")
+    _m = index.get("_meta", {})
+    log(f"Fonte de stock: {_m.get('stock_source', '?')}"
+        + (f" ({_m.get('stk_file')} de {_m.get('stk_mtime')})" if _m.get("stk_file") else ""))
 
     # Gate de sanidade: o custo tem de ser o UNIT FINAL COST, nunca o PCL.
     # Se as colunas do simulador mudarem de sítio, o cálculo cai em silêncio no
@@ -161,11 +166,13 @@ def main() -> int:
     payload = json.dumps(index, ensure_ascii=False).encode("utf-8")
     GZ.write_bytes(gzip.compress(payload, compresslevel=6))
     log(f"gz atualizado ({len(payload)/1024/1024:.1f} MB → {GZ.stat().st_size/1024/1024:.1f} MB).")
-    save_state(src_mtime, new_hash, len(index), stk_mtime)
 
     if NO_PUSH:
-        log("--no-push: rebuild local concluído (sem git).")
+        # Não gravar o estado: a próxima corrida agendada tem de ver esta versão como
+        # nova e publicá-la — senão um rebuild local deixa a produção para trás.
+        log("--no-push: rebuild local concluído (sem git; estado não gravado → a tarefa agendada publica na próxima corrida).")
         return 0
+    save_state(src_mtime, new_hash, len(index), stk_mtime)
 
     # Commit + push  ->  redeploy Railway
     log("A publicar no GitHub (→ redeploy Railway)...")
